@@ -38,8 +38,8 @@ sudo apt install python3 python3-tk
 With git:
 
 ```bash
-git clone https://github.com/YOUR-USERNAME/REPOSITORY-NAME.git
-cd REPOSITORY-NAME
+git clone https://github.com/Wario-Ametrano/JWManager.git
+cd JWManager
 ```
 Or download the `jwmanager.py` file from the project's GitHub page (green **Code → Download ZIP** button).
 
