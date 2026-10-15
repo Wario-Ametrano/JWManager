@@ -147,7 +147,8 @@ FALLBACK = {
 def parse_theme(path):
     """Estrae colori e misure principali da un file .jwmrc (formati 2.3 e 2.4)."""
     t = {"tray_pos": "bottom", "tray_h": 28, "title_h": 22, "border": 1,
-         "font": "", "tray_font": "", "icon_paths": [], "note": "", "error": None, "found": 0, "colors": {}}
+         "font": "", "tray_font": "", "icon_paths": [], "note": "",
+         "win_deco": "flat", "tray_deco": "flat", "menu_deco": "flat", "error": None, "found": 0, "colors": {}}
     try:
         roots = load_roots(path)
     except Exception as e:
@@ -186,6 +187,16 @@ def parse_theme(path):
                     except ValueError:
                         pass
         return default
+
+    # decorations="motif" -> bordi in rilievo (stile retro); altrimenti "flat"
+    for key, tag in (("win_deco", "WindowStyle"), ("tray_deco", "TrayStyle"),
+                     ("menu_deco", "MenuStyle")):
+        for root in roots:
+            el = root.find(tag)
+            if el is not None:
+                deco = (el.get("decorations") or "").strip().lower()
+                t[key] = "motif" if deco == "motif" else "flat"
+                break
 
     t["title_h"] = number(["WindowStyle/Height"], 16, 36, 22)
     t["border"] = number(["WindowStyle/Width"], 1, 6, 1)
@@ -412,6 +423,8 @@ class App(tk.Tk):
             msg = "Errore nel file: " + self.theme["error"]
         else:
             msg = "%s  (colori letti: %d/%d)" % (name, self.theme["found"], len(COLOR_PATHS))
+            msg += "  - stile: %s" % ("motif (rilievo)" if self.theme["win_deco"] == "motif"
+                                    else "flat (piatto)")
             if self.theme["note"]:
                 msg += " - " + self.theme["note"]
         self.set_status(msg)
@@ -510,6 +523,27 @@ class App(tk.Tk):
         if outline:
             c.create_rectangle(x1, y1, x2, y2, fill="", outline=outline)
 
+    def _shade(self, color, f):
+        """f>0 schiarisce (verso il bianco), f<0 scurisce (verso il nero)."""
+        r, g, b = [v // 256 for v in self.winfo_rgb(color)]
+        if f >= 0:
+            r, g, b = [int(v + (255 - v) * f) for v in (r, g, b)]
+        else:
+            r, g, b = [int(v * (1 + f)) for v in (r, g, b)]
+        return "#%02x%02x%02x" % (r, g, b)
+
+    def _bevel(self, x1, y1, x2, y2, base, raised=True, width=1):
+        """Bordo in rilievo (raised) o incassato, stile Motif / Windows 98."""
+        c = self.canvas
+        light, dark = self._shade(base, 0.35), self._shade(base, -0.5)
+        tl, br = (light, dark) if raised else (dark, light)
+        for i in range(width):
+            a, b, d, e = x1 + i, y1 + i, x2 - i - 1, y2 - i - 1
+            c.create_line(a, b, d, b, fill=tl)
+            c.create_line(a, b, a, e, fill=tl)
+            c.create_line(a, e, d, e, fill=br)
+            c.create_line(d, b, d, e, fill=br)
+
     def _ui_font(self, raw):
         fam = font_family(raw)
         try:
@@ -593,11 +627,18 @@ class App(tk.Tk):
 
         def window(x, y, ww, hh, active, label):
             pre = "act" if active else "inact"
-            outline = C(pre + "_outline")
-            c.create_rectangle(x, y, x + ww, y + hh, fill=outline, outline="")
+            motif = raw["win_deco"] == "motif"
+            # flat: cornice col colore Outline; motif: cornice col colore del titolo
+            frame = C(pre + "_title") if motif else C(pre + "_outline")
+            c.create_rectangle(x, y, x + ww, y + hh, fill=frame, outline="")
             self._fill(x + bw, y + bw, x + ww - bw, y + bw + th, S(pre + "_title"))
             c.create_rectangle(x + bw, y + bw + th, x + ww - bw, y + hh - bw,
                                fill="#1e1e1e", outline="")
+            if motif:
+                base = C(pre + "_title")
+                self._bevel(x, y, x + ww, y + hh, base, True, 1)            # bordo esterno
+                self._bevel(x + bw - 1, y + bw + th, x + ww - bw + 1, y + hh - bw + 1,
+                            base, False, 1)                                  # area interna
             txt = C(pre + "_text")
             c.create_text(x + bw + 8, y + bw + th / 2, text=label, anchor="w",
                           fill=txt, font=F(9, active))
@@ -621,9 +662,13 @@ class App(tk.Tk):
         mx, my, mw = w * 0.72, ay1 + H * 0.08, min(w * 0.25, 170)
         items = ("Terminale", "Browser", "Esci")
         ih = 24
-        c.create_rectangle(mx, my, mx + mw, my + ih * len(items) + 4,
-                           fill=C("menu_outline"), outline="")
-        self._fill(mx + 1, my + 1, mx + mw - 1, my + ih * len(items) + 3, S("menu_bg"))
+        mh = ih * len(items) + 4
+        if raw["menu_deco"] == "motif":
+            self._fill(mx, my, mx + mw, my + mh, S("menu_bg"))
+            self._bevel(mx, my, mx + mw, my + mh, C("menu_bg"), True, 1)
+        else:
+            c.create_rectangle(mx, my, mx + mw, my + mh, fill=C("menu_outline"), outline="")
+            self._fill(mx + 1, my + 1, mx + mw - 1, my + mh - 1, S("menu_bg"))
         for i, label in enumerate(items):
             iy = my + 2 + i * ih
             if i == 1:
@@ -635,15 +680,26 @@ class App(tk.Tk):
 
         # tray
         ty = 0 if top_tray else h - tray_h
+        tmotif = raw["tray_deco"] == "motif"
         self._fill(0, ty, w, ty + tray_h, S("tray_bg"), vertical=True)
-        c.create_line(0, ty + (tray_h - 1 if top_tray else 0), w,
-                      ty + (tray_h - 1 if top_tray else 0), fill=C("tray_outline"))
+        if tmotif:
+            self._bevel(0, ty, w, ty + tray_h, C("tray_bg"), True, 1)
+        else:
+            c.create_line(0, ty + (tray_h - 1 if top_tray else 0), w,
+                          ty + (tray_h - 1 if top_tray else 0), fill=C("tray_outline"))
         mid = ty + tray_h / 2
+
+        def tbtn(x1, y1, x2, y2, spec, pressed=False):
+            """Elemento della tray: piatto, oppure in rilievo/incassato se motif."""
+            self._fill(x1, y1, x2, y2, spec)
+            if tmotif:
+                self._bevel(x1, y1, x2, y2, spec[0], not pressed, 1)
+
         # pulsante menu con il simbolo (colori "Active" della tray)
         logo = self._logo_image(raw["icon_paths"], tray_h - 8)
         icon_fam = self._icon_font(raw["tray_font"])
         bwid = max(34, tray_h * 1.3) if (logo or icon_fam) else max(44, tray_h * 1.7)
-        self._fill(2, ty + 2, 2 + bwid, ty + tray_h - 2, S("tray_act_bg"))
+        tbtn(2, ty + 2, 2 + bwid, ty + tray_h - 2, S("tray_act_bg"))
         if logo:
             c.create_image(2 + bwid / 2, mid, image=logo)
         elif icon_fam:
@@ -657,7 +713,10 @@ class App(tk.Tk):
         for i in range(2):
             act = i == 0
             bg = S("pager_act_bg") if act else S("pager_bg")
-            self._fill(px, ty + 3, px + 34, ty + tray_h - 3, bg, outline=C("pager_outline"))
+            if tmotif:
+                tbtn(px, ty + 3, px + 34, ty + tray_h - 3, bg, pressed=True)
+            else:
+                self._fill(px, ty + 3, px + 34, ty + tray_h - 3, bg, outline=C("pager_outline"))
             c.create_rectangle(px + 6, ty + 8, px + 22, ty + tray_h - 8,
                                fill=C("pager_act_fg" if act else "pager_fg"), outline="")
             c.create_text(px + 28, mid, text=str(i + 1), fill=C("pager_text"), font=F(8))
@@ -667,12 +726,12 @@ class App(tk.Tk):
         tw = min(150, max(70, (w - tx - 90) / 2 - 6))
         for label, act in (("Finestra attiva", True), ("Finestra", False)):
             p = "task_act_" if act else "task_"
-            self._fill(tx, ty + 3, tx + tw, ty + tray_h - 3, S(p + "bg"))
+            tbtn(tx, ty + 3, tx + tw, ty + tray_h - 3, S(p + "bg"), pressed=act)
             c.create_text(tx + 6, mid, text=label, anchor="w", fill=C(p + "fg"), font=F(8))
             tx += tw + 6
         # orologio
         cw = 56
-        self._fill(w - cw - 4, ty + 3, w - 4, ty + tray_h - 3, S("clock_bg"))
+        tbtn(w - cw - 4, ty + 3, w - 4, ty + tray_h - 3, S("clock_bg"), pressed=True)
         c.create_text(w - 4 - cw / 2, mid, text="12:34", fill=C("clock_fg"), font=F(9))
 
 
