@@ -1,0 +1,47 @@
+<JWM>
+<!-- Automatically generated and updated. Do not touch -->
+    <Menu label="Debian">
+      <Menu label="Applicazioni">
+        <Menu label="Grafica">
+          <Program label="dotty" confirm="false">/usr/bin/dotty</Program>
+          <Program label="lefty" confirm="false">/usr/bin/lefty</Program>
+        </Menu>
+        <Menu label="Scienza">
+          <Menu label="Matematica">
+            <Program label="Bc" confirm="false">x-terminal-emulator  -T &quot;Bc&quot; -e sh -c &quot;/usr/bin/bc&quot;</Program>
+            <Program label="Dc" confirm="false">x-terminal-emulator  -T &quot;Dc&quot; -e sh -c &quot;/usr/bin/dc&quot;</Program>
+          </Menu>
+        </Menu>
+        <Menu label="Shell">
+          <Program label="Bash" confirm="false">x-terminal-emulator  -T &quot;Bash&quot; -e sh -c &quot;/bin/bash --login&quot;</Program>
+          <Program label="Dash" confirm="false">x-terminal-emulator  -T &quot;Dash&quot; -e sh -c &quot;/bin/dash -i&quot;</Program>
+          <Program label="Sh" confirm="false">x-terminal-emulator  -T &quot;Sh&quot; -e sh -c &quot;/bin/sh --login&quot;</Program>
+        </Menu>
+        <Menu label="Sistema">
+          <Menu label="Gestione pacchetti">
+            <Program label="Aptitude Package Manager (text)" confirm="false">x-terminal-emulator  -T &quot;Aptitude Package Manager (text)&quot; -e sh -c &quot;/usr/bin/aptitude-curses&quot;</Program>
+          </Menu>
+        </Menu>
+      </Menu>
+      <Menu label="Giochi">
+        <Menu label="Rompicapi">
+          <Program label="2048-qt" icon="/usr/share/pixmaps/2048-qt.xpm" confirm="false">/usr/games/2048-qt</Program>
+        </Menu>
+      </Menu>
+      <Menu label="Schermo">
+        <Menu label="Blocca schermo">
+          <Program label="Lock Screen (XScreenSaver)" confirm="false">/usr/bin/xscreensaver-command -lock</Program>
+        </Menu>
+        <Menu label="Salva schermo">
+          <Program label="Activate ScreenSaver (Next)" confirm="false">/usr/bin/xscreensaver-command -next</Program>
+          <Program label="Activate ScreenSaver (Previous)" confirm="false">/usr/bin/xscreensaver-command -prev</Program>
+          <Program label="Activate ScreenSaver (Random)" confirm="false">/usr/bin/xscreensaver-command -activate</Program>
+          <Program label="Demo Screen Hacks" confirm="false">/usr/bin/xscreensaver-command -demo</Program>
+          <Program label="Disable XScreenSaver" confirm="false">/usr/bin/xscreensaver-command -exit</Program>
+          <Program label="Enable XScreenSaver" confirm="false">/usr/bin/xscreensaver</Program>
+          <Program label="Reinitialize XScreenSaver" confirm="false">/usr/bin/xscreensaver-command -restart</Program>
+          <Program label="ScreenSaver Preferences" confirm="false">/usr/bin/xscreensaver-command -prefs</Program>
+        </Menu>
+      </Menu>
+    </Menu>
+</JWM>
