@@ -55,7 +55,7 @@ chmod +x ~/.jwm/jwmanager.py
 From a terminal:
 
 ```bash
-python3 ~/.jwm/jwmaneger.py
+python3 ~/.jwm/jwmanager.py
 ```
 
 ### Launch from the JWM menu (recommended)
