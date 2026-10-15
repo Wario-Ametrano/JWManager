@@ -1,4 +1,5 @@
-# JWManager
+# JWManager <img width="90" height="35" alt="jwmlogo" src="http://joewing.net/projects/jwm/jwm-blue.svg" />
+
 
 A small graphical program to **switch themes in JWM** without having to edit your `~/.jwmrc` file by hand every time.
 
@@ -71,34 +72,23 @@ Then reload JWM and you will find the **JWM Themes** entry in the menu.
 ### The themes folder
 
 Each theme is a **folder** inside `~/.jwm/themes`, and **the folder name is the theme name**. Inside the folder there is a file named exactly `.jwmrc`:
-
-```
-~/.jwm/themes/
-├── default/
-│   └── .jwmrc
-├── penguin/
-│   └── .jwmrc
-└── dark/
-    └── .jwmrc
-```
-
 JWM only reads a file named `.jwmrc` in your home folder. That is why each theme lives in its own folder: all the files can have the same name without overwriting each other.
 
 ### First launch
 
 On first launch the program creates the `~/.jwm/themes` folder and saves your current configuration as the **default** theme. If you don't have a `~/.jwmrc`, it uses the system one (`/etc/jwm/system.jwmrc`).
 
-### Adding a new theme
+## Adding a new theme
 
-1. Create a folder with the theme name:
+### 1. Create a folder with the theme name:
    ```bash
    mkdir -p ~/.jwm/themes/dark
    ```
-2. Copy the theme file into it, naming it `.jwmrc`:
+### 2. Copy the theme file into it, naming it `.jwmrc`:
    ```bash
    cp my-theme.jwmrc ~/.jwm/themes/dark/.jwmrc
    ```
-3. In the program, press **Reload list**.
+### 3. In the program, press **Reload list**.
 
 To save the configuration you are using right now as a theme:
 
@@ -114,8 +104,6 @@ cp ~/.jwmrc ~/.jwm/themes/my-theme/.jwmrc
 3. JWM restarts and the new theme is active.
 4. To go back, press **Reset default**.
 
-Below the preview there is a status line with the theme name, the number of colors read from the file (for example `default (colors read: 20/29)`), and the result of the operation (`Applied: ...`).
-
 ### What happens when you press "Apply"
 
 1. Your current `~/.jwmrc` is saved as `~/.jwmrc.bak` (safety copy).
@@ -123,9 +111,4 @@ Below the preview there is a status line with the theme name, the number of colo
 3. The program checks that the copy is identical to the original.
 4. JWM is restarted with `jwm -restart`.
 
-## Troubleshooting
-
-**The program won't start and shows `No module named 'tkinter'`**
-Install Tkinter: `sudo apt install python3-tk`
-
-Your themes in `~/.jwm/themes` stay where they are.
+### Your themes in `~/.jwm/themes` stay where they are.
