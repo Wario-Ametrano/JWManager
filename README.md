@@ -1,10 +1,12 @@
-# JWM Theme Manager
+# JWManager
 
 A small graphical program to **switch themes in JWM** without having to edit your `~/.jwmrc` file by hand every time.
 
 Pick a theme from the list, check the preview, press **Apply**, and JWM instantly reloads with the new theme.
 
-![JWM Theme Manager](screenshot.png)
+### JWM Theme Manager
+<img width="857" height="580" alt="screenshot" src="https://github.com/user-attachments/assets/c6e248be-3a6d-4cf7-b769-28609ddbd561" />
+
 
 ## Features
 
@@ -27,37 +29,27 @@ Optional, only to show the JWM logo in the preview: **Pillow**.
 ### 1. Install the required packages
 
 Open a terminal and run:
-
 ```bash
 sudo apt update
 sudo apt install python3 python3-tk
 ```
 
-Optional (logo in the preview):
-
-```bash
-sudo apt install python3-pil python3-pil.imagetk
-```
-
 ### 2. Download the program
-
 With git:
 
 ```bash
 git clone https://github.com/YOUR-USERNAME/REPOSITORY-NAME.git
 cd REPOSITORY-NAME
 ```
-
-Or download the `jwmaneger.py` file from the project's GitHub page (green **Code → Download ZIP** button).
+Or download the `jwmanager.py` file from the project's GitHub page (green **Code → Download ZIP** button).
 
 ### 3. Put it in the JWM folder
 
 ```bash
 mkdir -p ~/.jwm
-cp jwmaneger.py ~/.jwm/
-chmod +x ~/.jwm/jwmaneger.py
+cp jwmanager.py ~/.jwm/
+chmod +x ~/.jwm/jwmanager.py
 ```
-
 ## Running
 
 From a terminal:
@@ -71,12 +63,10 @@ python3 ~/.jwm/jwmaneger.py
 Open your `~/.jwmrc` and add this line inside `<RootMenu>`:
 
 ```xml
-<Program label="JWM Themes">python3 ~/.jwm/jwmaneger.py</Program>
+<Program label="JWM Themes">python3 ~/.jwm/jwmanager.py</Program>
 ```
 
 Then reload JWM and you will find the **JWM Themes** entry in the menu.
-
-## How it works
 
 ### The themes folder
 
@@ -133,50 +123,9 @@ Below the preview there is a status line with the theme name, the number of colo
 3. The program checks that the copy is identical to the original.
 4. JWM is restarted with `jwm -restart`.
 
-If something goes wrong, your previous configuration is always in `~/.jwmrc.bak`.
-
-## JWM logo in the preview
-
-The menu button in the preview panel shows the JWM logo, if it can find one. It looks in this order:
-
-1. `~/.jwm/jwm-logo.png` (also `.gif` or `.xpm`)
-2. the `IconPath` folders set in the theme
-3. `~/.jwm/icons` and the system folders (`/usr/share/pixmaps`, `/usr/share/icons/...`)
-
-The file name must start with `jwm`. Without Pillow, Tkinter can only read `png`, `gif` and `ppm`. If no logo is found, the program shows a Nerd Font symbol or the text "JWM".
-
-## Preview limitations
-
-The preview is a **simulation** drawn with the colors read from the theme file, not a real JWM rendering. So:
-
-- gradients are shown, but may differ slightly from the real result;
-- panel button icons, text with special characters and transparency are not simulated;
-- image backgrounds are not shown (the status line tells you).
-
 ## Troubleshooting
 
 **The program won't start and shows `No module named 'tkinter'`**
 Install Tkinter: `sudo apt install python3-tk`
 
-**I press "Apply" but the theme doesn't change**
-Read the message below the preview. Then try by hand:
-```bash
-cp ~/.jwm/themes/THEME-NAME/.jwmrc ~/.jwmrc
-jwm -restart
-```
-If that works, check that the `jwm` command is in your PATH (`which jwm`).
-
-**A theme doesn't show up in the list**
-Check that the file `~/.jwm/themes/THEME-NAME/.jwmrc` exists (with the leading dot) and press **Reload list**. Folders starting with a dot are ignored.
-
-**The logo doesn't appear**
-Put a `png` named `jwm-logo.png` in `~/.jwm/`.
-
-## Uninstall
-
-```bash
-rm ~/.jwm/jwmaneger.py
-```
-
 Your themes in `~/.jwm/themes` stay where they are.
-<img width="857" height="580" alt="screenshot" src="https://github.com/user-attachments/assets/c6e248be-3a6d-4cf7-b769-28609ddbd561" />
