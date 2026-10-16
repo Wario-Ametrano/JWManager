@@ -1,7 +1,7 @@
 <JWM>
 <!-- Automatically generated and updated. Do not touch -->
 
-     	<Menu label=" Grafica">
+     	<Menu label=" Graphic">
         <Program label=" Xfimage">xfimage</Program>
 			  <Program label="󰄀 Scrot (screenshot)">scrot -s</Program>
     	</Menu>

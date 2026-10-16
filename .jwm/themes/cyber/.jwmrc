@@ -15,7 +15,7 @@
 
 <!-- MENU  -->
     <RootMenu onroot="12" height="22">
-        <Include>/.jwm/debian-menu</Include>
+        <Include>.jwm/debian-menu</Include>
         <Separator/>
         <Restart label="󱞸 JWM Restart"/>
         <Menu label="󰩈 Exit">        

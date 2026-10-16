@@ -3,7 +3,7 @@
 
     <!-- The root menu. -->
     <RootMenu onroot="12">
-        <Include>/.jwm/debian-menu</Include>
+        <Include>.jwm/debian-menu</Include>
         <Program icon="utilities-terminal" label="Terminal">x-terminal-emulator</Program>
         <Separator/>
         <Program icon="lock" label="Lock">

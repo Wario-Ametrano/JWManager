@@ -16,7 +16,7 @@
 
     <!-- MENU  -->
     <RootMenu onroot="12">
-        <Include>/.jwm/debian-menu</Include>
+        <Include>.jwm/debian-menu</Include>
         <Separator/>
         <Program label="Xkill" icon="vcs-conflicting"  confirm="true">xkill</Program>
         <Restart label="JWM Restart" icon="vcs-update-required"/>
