@@ -1,0 +1,142 @@
+<?xml version="1.0"?>
+<JWM>
+    <!-- CYBERPUNK THEME -->
+
+    <!-- WALLPAPER -->
+    <Desktops> <Background type="gradient">#929292:#929292</Background> </Desktops>
+
+    <!-- STARTUP E MODALITÀ SAGOMA -->
+    <StartupCommand>xset s off -dpms s noblank</StartupCommand>
+    <StartupCommand>numlockx on</StartupCommand>
+    <StartupCommand>lxqt-policykit-agent &amp;</StartupCommand>
+
+    <MoveMode>outline</MoveMode>
+    <ResizeMode>outline</ResizeMode>
+
+<!-- MENU  -->
+    <RootMenu onroot="12" height="22">
+        <Include>/.jwm/debian-menu</Include>
+        <Separator/>
+        <Restart label="󱞸 JWM Restart"/>
+        <Menu label="󰩈 Exit">        
+			<Program label="󰐥 PowerOff">/usr/libexec/jwm/jwm-poweroff.sh</Program>
+			<Program label=" Reboot">/usr/libexec/jwm/jwm-reboot.sh</Program>
+			<Program label="󰍃 Log Out">exit</Program>
+        </Menu>
+    </RootMenu>
+    
+<!-- STILE DEL MENU  -->
+    <MenuStyle decorations="min">
+        <Font>JetBrainsMono NL Nerd Font-10</Font>
+        <Foreground>#ffffff</Foreground>
+        <Background>#000000</Background>
+        <Outline>#000000</Outline>
+        <Active>
+            <Foreground>#000000</Foreground>
+            <Background>#ffffff</Background>
+        </Active>   
+        <!-- Opzionale: aggiunge un bordo per separare visivamente il menu -->
+        <Opacity>1.0</Opacity>
+    </MenuStyle>
+
+<!--BARRA DELLE APPLICAZIONI -->
+    <Tray x="0"y="-1"height="27">
+        <TrayButton label="">root:1</TrayButton>
+        <Spacer width="1"/>
+        <TrayButton label="" popup="Show Desktop">showdesktop</TrayButton>
+        <Spacer width="1"/>
+        <Pager labeled="true"/>
+        <Spacer width="1"/>
+        <TaskList maxwidth="200" list="current"/>
+        <TrayButton label="" popup="File Manager">exec:xterm -e yazi</TrayButton>
+        <TrayButton  label="󰌀" popup="Min-Browser">exec:min </TrayButton>
+        <TrayButton label="" popup="Terminal Emulator">exec:xterm</TrayButton>  
+        <!-- Wi-Fi -->
+		<TrayButton label=" 󰖩 " popup="Connessioni Wi-Fi">exec:xterm -e nmtui</TrayButton>      
+		<Spacer width="5"/>
+		 <!-- OROLOGIO -->
+		<Clock format="%H:%M">
+		</Clock>
+    	</Tray>
+    	<ClockStyle>
+			<Font>JetBrainsMonoNerdFontPropo:pixelsize=15:antialias=true:autohint=true</Font>
+    	    <Foreground>#ffffff</Foreground>
+    	    <Background>#000000</Background>
+    	</ClockStyle>
+    	
+<!-- STILE PANNELLO -->
+    <TrayStyle decorations="min">
+		<Font>JetBrainsMonoNerdFontMono:pixelsize=27:antialias=true:autohint=true</Font>
+        <Background>#000000</Background>
+        <Outline>#000000</Outline>
+        <Active>
+            <Background>#ffffff</Background> <!-- pulsante start pannello-->
+            <Foreground>#000000</Foreground>
+        </Active>
+    </TrayStyle>
+    
+ <!-- STILE PULSANTI BARRA -->
+        <TaskListStyle group="false"decorations="min">
+            <Font>JetBrainsMono NL Nerd Font-10</Font>
+            <Background>#000000</Background>
+            <Foreground>#7d7d7d</Foreground>     
+            <Active>
+                <Background>#000000</Background>
+                <Foreground>#ffffff</Foreground>
+            </Active>
+        </TaskListStyle>
+
+<!-- DESKTOP MULTIPLI -->
+    <Desktops width="3" height="1">
+        <Desktop name="1"/>
+        <Desktop name="2"/>
+        <Desktop name="3"/>
+    </Desktops>
+
+    <PagerStyle>
+        <Font>JetBrainsMono NL Nerd Font-10</Font>
+        <Foreground>#1d1d1d</Foreground> <!-- miniatura finestra desktop attivo -->
+        <Background>#000000</Background> <!-- desktop inattivi -->
+        <Outline>#000000</Outline> <!-- divisore -->
+        <Text>#dadada</Text>
+        <Active>
+            <Foreground>#1d1d1d</Foreground> <!-- miniatura finestra desktop attivo -->
+            <Background>#1d1d1d</Background> <!-- colore desktop attivo -->
+        </Active>
+    </PagerStyle>
+
+
+<!-- STILE FINESTRE -->
+    <WindowStyle decorations="min">
+        <Font>JetBrainsMono NL Nerd Font-10</Font>
+        <Width>1</Width>
+        <Height>25</Height>
+        <Corner>0</Corner>
+        <Foreground>#ffffff</Foreground>
+        <Background>#000000</Background>
+        <Outline>#ffffff</Outline>
+        <Active>
+            <Foreground>#ffffff</Foreground>
+            <Background>#000000</Background> <!-- finesta attiva -->
+            <Outline>#ffffff</Outline>
+        </Active>
+    </WindowStyle>
+
+<!-- DIMENSIONE DEFAULT APP-->
+    <Group> <Name>xfe</Name> <Width>800</Width> <Height>500</Height> <X>100</X> <Y>50</Y> <Maximized>false</Maximized> </Group>
+    <Group> <Name>min</Name> <Maximized>true</Maximized> </Group>
+
+    <!-- SHOTCUT MENU-->
+    <Key key="Super_L">root:1</Key>
+    <Key mask="C" key="t">exec:xterm</Key>
+    <Key mask="A" key="x">exec:xfe</Key>
+
+    <!-- FOCUS E ICONE -->
+    <FocusModel>click</FocusModel>
+    <IconPath>/usr/share/icons/Papirus-Dark/64x64/apps</IconPath>
+    <IconPath>/usr/share/icons/Papirus-Dark/64x64/categories</IconPath>
+    <IconPath>/usr/share/icons/Papirus-Dark/64x64/places</IconPath>
+    <IconPath>/usr/share/icons/Papirus-Dark/48x48/emblems</IconPath>
+    <IconPath>/usr/share/pixmaps</IconPath>
+
+</JWM>
