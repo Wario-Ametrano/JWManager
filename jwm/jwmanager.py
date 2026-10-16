@@ -112,6 +112,8 @@ COLOR_PATHS = {
     "menu_sel_fg": ["MenuStyle/Active/Foreground", "MenuStyle/Active/Text"],
     "task_bg": ["TaskListStyle/Background"],
     "task_fg": ["TaskListStyle/Foreground", "TaskListStyle/Text"],
+    "task_min_bg": ["TaskListStyle/Minimized/Background"],
+    "task_min_fg": ["TaskListStyle/Minimized/Foreground"],
     "task_act_bg": ["TaskListStyle/Active/Background"],
     "task_act_fg": ["TaskListStyle/Active/Foreground", "TaskListStyle/Active/Text"],
     "clock_bg": ["ClockStyle/Background"],
@@ -138,6 +140,7 @@ FALLBACK = {
     "menu_outline": "menu_bg", "menu_sel_bg": "menu_fg", "menu_sel_fg": "menu_bg",
     "task_bg": "tray_bg", "task_fg": "tray_fg",
     "task_act_bg": "task_bg", "task_act_fg": "task_fg",
+    "task_min_bg": "task_bg", "task_min_fg": "task_fg",
     "clock_bg": "tray_bg", "clock_fg": "tray_fg",
     "pager_bg": "tray_bg", "pager_fg": "tray_fg", "pager_outline": "tray_bg",
     "pager_text": "tray_fg", "pager_act_bg": "pager_fg", "pager_act_fg": "pager_bg",
@@ -148,7 +151,8 @@ def parse_theme(path):
     """Estrae colori e misure principali da un file .jwmrc (formati 2.3 e 2.4)."""
     t = {"tray_pos": "bottom", "tray_h": 28, "title_h": 22, "border": 1,
          "font": "", "tray_font": "", "icon_paths": [], "note": "",
-         "win_deco": "flat", "tray_deco": "flat", "menu_deco": "flat", "error": None, "found": 0, "colors": {}}
+         "win_deco": "flat", "tray_deco": "flat", "menu_deco": "flat",
+         "tray_items": TRAY_DEFAULT, "error": None, "found": 0, "colors": {}}
     try:
         roots = load_roots(path)
     except Exception as e:
@@ -198,6 +202,7 @@ def parse_theme(path):
                 t[key] = "motif" if deco == "motif" else "flat"
                 break
 
+    t["tray_items"] = parse_tray(roots)
     t["title_h"] = number(["WindowStyle/Height"], 16, 36, 22)
     t["border"] = number(["WindowStyle/Width"], 1, 6, 1)
 
@@ -257,6 +262,48 @@ def find_logo(icon_paths):
                     if os.path.isfile(f):
                         return f
     return None
+
+
+TRAY_DEFAULT = [
+    {"type": "button", "label": "", "icon": "", "action": "root:1"},
+    {"type": "pager", "labeled": True},
+    {"type": "tasklist", "maxwidth": 200},
+    {"type": "clock", "format": "%H:%M"},
+]
+
+
+def parse_tray(roots):
+    """Legge gli elementi dentro <Tray> nell'ordine in cui compaiono nel file."""
+    def num(v, default):
+        try:
+            return int(float(v))
+        except (TypeError, ValueError):
+            return default
+
+    for root in roots:
+        tray = root.find("Tray")
+        if tray is None:
+            continue
+        items = []
+        for el in tray:
+            if el.tag == "TrayButton":
+                items.append({"type": "button", "label": el.get("label") or "",
+                              "icon": el.get("icon") or "",
+                              "action": (el.text or "").strip()})
+            elif el.tag == "Spacer":
+                items.append({"type": "spacer", "w": max(0, num(el.get("width"), 2))})
+            elif el.tag == "Pager":
+                items.append({"type": "pager",
+                              "labeled": (el.get("labeled") or "").lower() == "true"})
+            elif el.tag == "TaskList":
+                items.append({"type": "tasklist", "maxwidth": num(el.get("maxwidth"), 200)})
+            elif el.tag == "Swallow":
+                items.append({"type": "swallow", "w": num(el.get("width"), 32)})
+            elif el.tag == "Clock":
+                items.append({"type": "clock", "format": el.get("format") or "%H:%M"})
+        if items:
+            return items
+    return TRAY_DEFAULT
 
 
 def font_family(spec):
@@ -523,6 +570,10 @@ class App(tk.Tk):
         if outline:
             c.create_rectangle(x1, y1, x2, y2, fill="", outline=outline)
 
+    @staticmethod
+    def _clock_text(fmt):
+        return "12:34 PM" if "%p" in fmt else "12:34"
+
     def _shade(self, color, f):
         """f>0 schiarisce (verso il bianco), f<0 scurisce (verso il nero)."""
         r, g, b = [v // 256 for v in self.winfo_rgb(color)]
@@ -636,22 +687,41 @@ class App(tk.Tk):
                                fill="#1e1e1e", outline="")
             if motif:
                 base = C(pre + "_title")
-                self._bevel(x, y, x + ww, y + hh, base, True, 1)            # bordo esterno
+                self._bevel(x, y, x + ww, y + hh, base, True, 2 if bw >= 3 else 1)  # esterno
                 self._bevel(x + bw - 1, y + bw + th, x + ww - bw + 1, y + hh - bw + 1,
                             base, False, 1)                                  # area interna
             txt = C(pre + "_text")
             c.create_text(x + bw + 8, y + bw + th / 2, text=label, anchor="w",
                           fill=txt, font=F(9, active))
-            # pulsanti in alto a destra: minimizza, massimizza, chiudi
+            # pulsanti in alto a destra: riduci, ingrandisci, chiudi
             cy = y + bw + th / 2
-            r = 4
-            cx = x + ww - bw - 14                      # chiudi (X)
-            c.create_line(cx - r, cy - r, cx + r + 1, cy + r + 1, fill=txt, width=1)
-            c.create_line(cx - r, cy + r, cx + r + 1, cy - r - 1, fill=txt, width=1)
-            cx -= 20                                   # massimizza (quadrato)
-            c.create_rectangle(cx - r, cy - r, cx + r, cy + r, outline=txt)
-            cx -= 20                                   # minimizza (trattino)
-            c.create_line(cx - r, cy + r - 1, cx + r + 1, cy + r - 1, fill=txt, width=2)
+            r = max(4, int(th * 0.22))
+            if motif:
+                # tre pulsanti quadrati in rilievo, uno accanto all'altro
+                base = C(pre + "_title")
+                for i in range(3):                       # 0=chiudi 1=ingrandisci 2=riduci
+                    bx2 = x + ww - bw - i * th
+                    bx1 = bx2 - th
+                    c.create_rectangle(bx1, y + bw, bx2, y + bw + th, fill=base, outline="")
+                    self._bevel(bx1, y + bw, bx2, y + bw + th, base, True, 1)
+                    cx = (bx1 + bx2) / 2
+                    if i == 0:
+                        c.create_line(cx - r, cy - r, cx + r + 1, cy + r + 1, fill=txt, width=2)
+                        c.create_line(cx - r, cy + r, cx + r + 1, cy - r - 1, fill=txt, width=2)
+                    elif i == 1:
+                        c.create_rectangle(cx - r, cy - r, cx + r, cy + r, outline=txt, width=2)
+                    else:
+                        c.create_line(cx - r, cy + r - 1, cx + r + 1, cy + r - 1,
+                                      fill=txt, width=2)
+            else:
+                # stile flat: solo i simboli, senza riquadri
+                cx = x + ww - bw - 14                    # chiudi (X)
+                c.create_line(cx - r, cy - r, cx + r + 1, cy + r + 1, fill=txt, width=1)
+                c.create_line(cx - r, cy + r, cx + r + 1, cy - r - 1, fill=txt, width=1)
+                cx -= 20                                 # ingrandisci (quadrato)
+                c.create_rectangle(cx - r, cy - r, cx + r, cy + r, outline=txt)
+                cx -= 20                                 # riduci (trattino)
+                c.create_line(cx - r, cy + r - 1, cx + r + 1, cy + r - 1, fill=txt, width=2)
             c.create_text(x + bw + 10, y + bw + th + 18, text="Contenuto della finestra",
                           anchor="w", fill="#9a9a9a", font=F(9))
 
@@ -678,7 +748,7 @@ class App(tk.Tk):
                 fg = C("menu_fg")
             c.create_text(mx + 10, iy + ih / 2, text=label, anchor="w", fill=fg, font=F(9))
 
-        # tray
+        # tray: gli elementi vengono disegnati nell'ordine del file <Tray>
         ty = 0 if top_tray else h - tray_h
         tmotif = raw["tray_deco"] == "motif"
         self._fill(0, ty, w, ty + tray_h, S("tray_bg"), vertical=True)
@@ -688,52 +758,113 @@ class App(tk.Tk):
             c.create_line(0, ty + (tray_h - 1 if top_tray else 0), w,
                           ty + (tray_h - 1 if top_tray else 0), fill=C("tray_outline"))
         mid = ty + tray_h / 2
+        y1, y2 = ty + 1, ty + tray_h - 1
 
-        def tbtn(x1, y1, x2, y2, spec, pressed=False):
+        def tbtn(x1, y1_, x2, y2_, spec, pressed=False):
             """Elemento della tray: piatto, oppure in rilievo/incassato se motif."""
-            self._fill(x1, y1, x2, y2, spec)
+            self._fill(x1, y1_, x2, y2_, spec)
             if tmotif:
-                self._bevel(x1, y1, x2, y2, spec[0], not pressed, 1)
+                self._bevel(x1, y1_, x2, y2_, spec[0], not pressed, 1)
 
-        # pulsante menu con il simbolo (colori "Active" della tray)
-        logo = self._logo_image(raw["icon_paths"], tray_h - 8)
+        logo = self._logo_image(raw["icon_paths"], tray_h - 2)
         icon_fam = self._icon_font(raw["tray_font"])
-        bwid = max(34, tray_h * 1.3) if (logo or icon_fam) else max(44, tray_h * 1.7)
-        tbtn(2, ty + 2, 2 + bwid, ty + tray_h - 2, S("tray_act_bg"))
-        if logo:
-            c.create_image(2 + bwid / 2, mid, image=logo)
-        elif icon_fam:
-            c.create_text(2 + bwid / 2, mid, text=MENU_ICON, fill=C("tray_act_fg"),
-                          font=(icon_fam, 14))
-        else:
-            c.create_text(2 + bwid / 2, mid, text="JWM", fill=C("tray_act_fg"),
-                          font=F(9, True))
-        # pager: 2 desktop, il primo attivo
-        px = 2 + bwid + 10
-        for i in range(2):
-            act = i == 0
-            bg = S("pager_act_bg") if act else S("pager_bg")
-            if tmotif:
-                tbtn(px, ty + 3, px + 34, ty + tray_h - 3, bg, pressed=True)
-            else:
-                self._fill(px, ty + 3, px + 34, ty + tray_h - 3, bg, outline=C("pager_outline"))
-            c.create_rectangle(px + 6, ty + 8, px + 22, ty + tray_h - 8,
-                               fill=C("pager_act_fg" if act else "pager_fg"), outline="")
-            c.create_text(px + 28, mid, text=str(i + 1), fill=C("pager_text"), font=F(8))
-            px += 36
-        # lista finestre: una attiva, una no
-        tx = px + 10
-        tw = min(150, max(70, (w - tx - 90) / 2 - 6))
-        for label, act in (("Finestra attiva", True), ("Finestra", False)):
-            p = "task_act_" if act else "task_"
-            tbtn(tx, ty + 3, tx + tw, ty + tray_h - 3, S(p + "bg"), pressed=act)
-            c.create_text(tx + 6, mid, text=label, anchor="w", fill=C(p + "fg"), font=F(8))
-            tx += tw + 6
-        # orologio
-        cw = 56
-        tbtn(w - cw - 4, ty + 3, w - 4, ty + tray_h - 3, S("clock_bg"), pressed=True)
-        c.create_text(w - 4 - cw / 2, mid, text="12:34", fill=C("clock_fg"), font=F(9))
+        is_pua = lambda ch: 0xE000 <= ord(ch) <= 0xF8FF or ord(ch) >= 0xF0000
 
+        def label_of(text):
+            lab = text.strip()
+            if lab and any(is_pua(ch) for ch in lab) and not icon_fam:
+                return "\u2022"                  # simbolo Nerd Font non disponibile
+            return lab
+
+        ndesk, cell = 3, int(tray_h * 1.6)
+
+        def width_of(it):
+            kind = it["type"]
+            if kind == "spacer":
+                return it["w"]
+            if kind == "pager":
+                return ndesk * cell
+            if kind == "swallow":
+                return min(it["w"], 40) + 2
+            if kind == "clock":
+                return 14 + 7 * len(self._clock_text(it["format"]))
+            if kind == "button":
+                if it["action"].startswith("root:"):
+                    return int(tray_h * 1.6)
+                lab = label_of(it["label"])
+                return max(tray_h, 12 + 7 * len(lab)) if lab else tray_h
+            return 0                              # tasklist: prende lo spazio rimasto
+
+        items = raw["tray_items"]
+        flex = max(90, w - 4 - sum(width_of(i) for i in items))
+        x = 2
+        for it in items:
+            kind = it["type"]
+            wd = flex if kind == "tasklist" else width_of(it)
+            if kind == "button":
+                tbtn(x, y1, x + wd, y2, S("tray_bg"))
+                if it["action"].startswith("root:"):
+                    if logo:
+                        c.create_image(x + wd / 2, mid, image=logo)
+                    elif icon_fam:
+                        c.create_text(x + wd / 2, mid, text=MENU_ICON, fill=C("tray_fg"),
+                                      font=(icon_fam, 14))
+                    else:
+                        c.create_text(x + wd / 2, mid, text="JWM", fill=C("tray_fg"),
+                                      font=F(9, True))
+                else:
+                    lab = label_of(it["label"])
+                    if lab:
+                        pua = any(is_pua(ch) for ch in it["label"])
+                        c.create_text(x + wd / 2, mid, text=lab, fill=C("tray_fg"),
+                                      font=(icon_fam, 12) if (pua and icon_fam) else F(9))
+                    else:  # bottone con icona: segnaposto
+                        c.create_rectangle(x + wd / 2 - 6, mid - 6, x + wd / 2 + 6, mid + 6,
+                                           outline=C("tray_fg"))
+            elif kind == "pager":
+                for i in range(ndesk):
+                    x0, act = x + i * cell, i == 0
+                    self._fill(x0, y1, x0 + cell, y2, S("pager_act_bg") if act else S("pager_bg"))
+                    if act:  # miniature delle finestre sul desktop attivo
+                        c.create_rectangle(x0 + 11, y1 + 6, x0 + cell - 7, y2 - 4,
+                                           fill=C("pager_fg"), outline=C("pager_outline"))
+                        c.create_rectangle(x0 + 5, y1 + 4, x0 + 21, y1 + 13,
+                                           fill=C("pager_act_fg"), outline=C("pager_text"))
+                    elif it.get("labeled"):
+                        c.create_text(x0 + cell / 2, mid, text=str(i + 1),
+                                      fill=C("pager_text"), font=F(8))
+                    if tmotif:   # separatore tra i desktop (niente rilievo)
+                        sep = self._shade(C("tray_bg"), -0.5)
+                        c.create_line(x0 + cell - 1, y1, x0 + cell - 1, y2, fill=sep)
+                        c.create_line(x0 + cell, y1, x0 + cell, y2,
+                                      fill=self._shade(C("tray_bg"), 0.2))
+                    else:
+                        c.create_rectangle(x0, y1, x0 + cell, y2, outline=C("pager_outline"))
+            elif kind == "tasklist":
+                kinds = (("Finestra attiva", "task_act_", True), ("Finestra", "task_", False),
+                         ("Minimizzata", "task_min_", True))
+                n = max(1, min(len(kinds), int(wd // 90)))
+                iw = max(50, min(it["maxwidth"], int(wd // n) - 2))
+                for j, (label, pre, pressed) in enumerate(kinds[:n]):
+                    ix = x + j * (iw + 2)
+                    tbtn(ix, y1, ix + iw, y2, S(pre + "bg"), pressed=pressed)
+                    c.create_rectangle(ix + 5, mid - 5, ix + 15, mid + 5, outline=C(pre + "fg"))
+                    c.create_text(ix + 21, mid, text=label, anchor="w", fill=C(pre + "fg"),
+                                  font=F(8))
+            elif kind == "swallow":
+                sz = min(it["w"], 40, tray_h - 2)
+                sx = x + 1
+                c.create_rectangle(sx, mid - sz / 2, sx + sz, mid + sz / 2,
+                                   fill="#ffffff", outline="")
+                c.create_oval(sx + 3, mid - sz / 2 + 3, sx + sz - 3, mid + sz / 2 - 3,
+                              outline="#d8d8d8")
+                c.create_line(sx + sz / 2, mid, sx + sz - 6, mid - 2, fill="#2a6f73", width=2)
+            elif kind == "clock":
+                if "clock_bg" in col:
+                    self._fill(x, y1, x + wd, y2, S("clock_bg"))
+                c.create_text(x + wd / 2, mid, text=self._clock_text(it["format"]),
+                              fill=C("clock_fg"), font=F(9))
+            x += wd
 
 if __name__ == "__main__":
     App().mainloop()
