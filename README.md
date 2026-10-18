@@ -5,7 +5,7 @@ A small graphical program to **switch themes in JWM** without having to edit you
 
 Pick a theme from the list, check the preview, press **Apply**, and JWM instantly reloads with the new theme.
 
-<img src="screenshot.png" width="496" align="right" alt="jwmaneger icon">
+![Dark](https://github.com/Wario-Ametrano/JWManager/blob/main/.jwm/screenshot.png))
 
 ## Features
 
@@ -82,12 +82,7 @@ cp icon.png ~/.jwm/icons/jwmaneger.png
 ```
 
 Then reload JWM and you will find the **jwmaneger** entry, with its icon, in the menu. The window title (and the entry in your panel's task list) is also **jwmaneger**.
-
-JWM only reads a file named `.jwmrc` in your home folder. That is why each theme lives in its own folder: all the files can have the same name without overwriting each other.
-
-### First launch
-
-On first launch the program creates the `~/.jwm/themes` folder and saves your current configuration as the **default** theme. If you don't have a `~/.jwmrc`, it uses the system one (`/etc/jwm/system.jwmrc`).
+JWM only reads a file named `.jwmrc` in your home folder. That is why each theme lives in its own folder: all the files can have the same name without overwriting each other. On first launch the program creates the `~/.jwm/themes` folder and saves your current configuration as the **default** theme. If you don't have a `~/.jwmrc`, it uses the system one (`/etc/jwm/system.jwmrc`).
 
 ### Adding a new theme
 
