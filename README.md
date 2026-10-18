@@ -1,9 +1,7 @@
 # jwmaneger
 
 
-A small graphical program to **switch themes in JWM** without having to edit your `~/.jwmrc` file by hand every time.
-
-Pick a theme from the list, check the preview, press **Apply**, and JWM instantly reloads with the new theme.
+A small graphical program to **switch themes in JWM** without having to edit your `~/.jwmrc` file by hand every time.Pick a theme from the list, check the preview, press **Apply**, and JWM instantly reloads with the new theme.
 
 ![Dark](https://github.com/Wario-Ametrano/JWManager/blob/main/.jwm/screenshot.png)
 
@@ -115,20 +113,16 @@ cp ~/.jwmrc ~/.jwm/themes/my-theme/.jwmrc
 
 ## Troubleshooting
 
-**The program won't start and shows `No module named 'tkinter'`**
-Install Tkinter: `sudo apt install python3-tk`
-
-**I press "Apply" but the theme doesn't change**
+The program won't start and shows `No module named 'tkinter'`Install Tkinter: `sudo apt install python3-tk`
+I press "Apply" but the theme doesn't change
 Read the message below the preview. Then try by hand:
 ```bash
 cp ~/.jwm/themes/THEME-NAME/.jwmrc ~/.jwmrc
 jwm -restart
 ```
 If that works, check that the `jwm` command is in your PATH (`which jwm`).
-
 **A theme doesn't show up in the list**
 Check that the file `~/.jwm/themes/THEME-NAME/.jwmrc` exists (with the leading dot) and press **Reload list**. Folders starting with a dot are ignored.
-
 **The logo doesn't appear**
 Put a `png` named `jwm-logo.png` in `~/.jwm/`. (Files starting with `jwmaneger`, like the app icon, are never used as the JWM logo.)
 
