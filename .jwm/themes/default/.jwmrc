@@ -1,18 +1,21 @@
 <?xml version="1.0"?>
 <JWM>
 
+<!-- WALLPAPER -->
+    <Desktops> <Background type="gradient">#041b39:#387cb0</Background> </Desktops>
+
     <!-- The root menu. -->
     <RootMenu onroot="12">
         <Include>.jwm/debian-menu</Include>
-        <Program icon="utilities-terminal" label="Terminal">x-terminal-emulator</Program>
+        <Program label="Terminal">x-terminal-emulator</Program>
         <Separator/>
-        <Program icon="lock" label="Lock">
+        <Program label="Lock">
            xscreensaver-command -lock
         </Program>
         <Separator/>
-        <Restart label="Restart" icon="reload"/>
+        <Restart label="Restart" />
         <Program label="Power Off">/usr/libexec/jwm/jwm-poweroff.sh</Program>
-        <Exit label="Log Out" confirm="true" icon="exit"/>
+        <Exit label="Log Out" confirm="true"/>
     </RootMenu>
 
     <!-- Options for program groups. -->
@@ -41,17 +44,17 @@
 
         <TaskList maxwidth="256"/>
 
-        <Swallow width="32" height="32" name="xclock">xclock</Swallow>
+      <!--    <Swallow width="32" height="32" name="xclock">xclock</Swallow> -->
 
         <Dock/>
-        <Clock format="%l:%M %p"><Button mask="123">exec:xclock</Button></Clock>
+        <Clock format="%H:%M"><Button mask="123">exec:xclock</Button></Clock>
 
     </Tray>
 
     <!-- Visual Styles -->
     <WindowStyle decorations="motif">
         <Font>Sans-12:bold</Font>
-        <Width>3</Width>
+        <Width>2</Width>
         <Height>22</Height>
         <Corner>0</Corner>
         <Foreground>#FFFFFF</Foreground>
@@ -63,6 +66,7 @@
             <Opacity>1.0</Opacity>
         </Active>
     </WindowStyle>
+
     <TrayStyle decorations="motif">
         <Font>Sans-12</Font>
         <Background>#333333</Background>
@@ -71,6 +75,7 @@
     </TrayStyle>
     <TaskListStyle group="false">
       <Font>Sans-12</Font>
+
       <Active>
         <Foreground>#FFFFFF</Foreground>
         <Background>#555555</Background>
@@ -82,6 +87,7 @@
       <Foreground>#FFFFFF</Foreground>
       <Background>#333333</Background>
     </TaskListStyle>
+
     <PagerStyle>
         <Foreground>#555555</Foreground>
         <Background>#333333</Background>
@@ -160,13 +166,7 @@
 
     <!-- Virtual Desktops -->
     <!-- Desktop tags can be contained within Desktops for desktop names. -->
-    <Desktops width="3" height="1">
-        <!-- Default background. Note that a Background tag can be
-              contained within a Desktop tag to give a specific background
-              for that desktop.
-         -->
-        <Background type="solid">#111111</Background>
-    </Desktops>
+    <Desktops width="3" height="1"></Desktops>
 
     <!-- Double click speed (in milliseconds) -->
     <DoubleClickSpeed>400</DoubleClickSpeed>
