@@ -66,15 +66,7 @@ From a terminal:
 python3 ~/.jwm/jwmaneger.py
 ```
 
-### Launch from the JWM menu (recommended)
-
-Copy the icon next to the program, then open your `~/.jwmrc` and add this line inside `<RootMenu>`:
-
-```bash
-mkdir -p ~/.jwm/icons
-cp icon.png ~/.jwm/icons/jwmaneger.png
-```
-
+Launch from the JWM menu (recommended)
 ```xml
 <Program icon="/home/YOUR-USER/.jwm/icons/jwmaneger.png" label="jwmaneger">python3 ~/.jwm/jwmaneger.py</Program>
 ```
