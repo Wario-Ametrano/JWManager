@@ -5,7 +5,7 @@ A small graphical program to **switch themes in JWM** without having to edit you
 
 Pick a theme from the list, check the preview, press **Apply**, and JWM instantly reloads with the new theme.
 
-![Dark](https://github.com/Wario-Ametrano/JWManager/blob/main/.jwm/screenshot.png))
+![Dark](https://github.com/Wario-Ametrano/JWManager/blob/main/.jwm/screenshot.png)
 
 ## Features
 
