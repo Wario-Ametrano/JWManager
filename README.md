@@ -80,10 +80,6 @@ cp icon.png ~/.jwm/icons/jwmaneger.png
 ```xml
 <Program icon="/home/YOUR-USER/.jwm/icons/jwmaneger.png" label="jwmaneger">python3 ~/.jwm/jwmaneger.py</Program>
 ```
-
-Then reload JWM and you will find the **jwmaneger** entry, with its icon, in the menu. The window title (and the entry in your panel's task list) is also **jwmaneger**.
-JWM only reads a file named `.jwmrc` in your home folder. That is why each theme lives in its own folder: all the files can have the same name without overwriting each other. On first launch the program creates the `~/.jwm/themes` folder and saves your current configuration as the **default** theme. If you don't have a `~/.jwmrc`, it uses the system one (`/etc/jwm/system.jwmrc`).
-
 ### Adding a new theme
 
 1. Create a folder with the theme name:
@@ -116,18 +112,6 @@ cp ~/.jwmrc ~/.jwm/themes/my-theme/.jwmrc
 2. The file `~/.jwm/themes/<theme>/.jwmrc` is copied to `~/.jwmrc`.
 3. The program checks that the copy is identical to the original.
 4. JWM is restarted with `jwm -restart`.
-
-## JWM logo in the preview
-
-The menu button in the preview panel shows the JWM logo, if it can find one. It looks in this order:
-
-1. `~/.jwm/jwm-logo.png` (also `.gif` or `.xpm`)
-2. the `IconPath` folders set in the theme
-3. `~/.jwm/icons` and the system folders (`/usr/share/pixmaps`, `/usr/share/icons/...`)
-
-The first search can take a moment (system icon folders are large), so jwmaneger remembers the result in `~/.jwm/jwmaneger-cache.json`. It is only a cache: you can delete it at any time and it will be recreated.
-
-The file name must start with `jwm`. Without Pillow, Tkinter can only read `png`, `gif` and `ppm`. If no logo is found, the program shows a Nerd Font symbol or the text "JWM".
 
 ## Troubleshooting
 
