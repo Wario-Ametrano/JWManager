@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""jwmaneger - a small theme manager for JWM, with a live preview.
+"""JWManager - a small theme manager for JWM, with a live preview.
 
 Each theme is a folder inside ~/.jwm/themes that contains a .jwmrc file:
     ~/.jwm/themes/<theme-name>/.jwmrc
@@ -18,9 +18,10 @@ import threading
 import traceback
 import tkinter as tk
 import tkinter.font as tkfont
+from tkinter import colorchooser
 import xml.etree.ElementTree as ET
 
-APP_NAME = "jwmaneger"      # window title, panel entry and WM class
+APP_NAME = "JWManager"      # window title, header and WM class
 
 HOME = os.path.expanduser("~")
 THEMES_DIR = os.path.join(HOME, ".jwm", "themes")
@@ -28,7 +29,7 @@ TARGET = os.path.join(HOME, ".jwmrc")
 THEME_FILE = ".jwmrc"
 DEFAULT_NAME = "default"
 SYSTEM_RC = "/etc/jwm/system.jwmrc"
-CACHE_FILE = os.path.join(HOME, ".jwm", "jwmaneger-cache.json")   # remembers the logo path
+CACHE_FILE = os.path.join(HOME, ".jwm", "jwmanager-cache.json")   # remembers the logo path
 
 # Symbol (Nerd Font) shown on the panel menu button of the preview.
 # To change it, put the code of your symbol here, e.g. "\uf17b8" or "\ue795".
@@ -238,7 +239,8 @@ def parse_theme(path):
     t = {"tray_pos": "bottom", "tray_h": 28, "title_h": 22, "border": 1,
          "font": "", "tray_font": "", "icon_paths": [], "note": "",
          "win_deco": "flat", "tray_deco": "flat", "menu_deco": "flat",
-         "tray_items": TRAY_DEFAULT, "error": None, "found": 0, "colors": {}}
+         "tray_items": TRAY_DEFAULT, "error": None, "found": 0, "colors": {},
+         "desktop_defined": False}
     try:
         roots = load_roots(path)
     except Exception as e:
@@ -261,6 +263,8 @@ def parse_theme(path):
                             t["note"] = "'%s' background not shown" % kind
                             continue
                     t["colors"][key] = val
+                    if key == "desktop":
+                        t["desktop_defined"] = True
                     t["found"] += 1
                     return
 
@@ -449,6 +453,10 @@ def parse_tray(roots):
                 items.append({"type": "tasklist", "maxwidth": num(el.get("maxwidth"), 200)})
             elif el.tag == "Swallow":
                 items.append({"type": "swallow", "w": num(el.get("width"), 32)})
+            elif el.tag == "Dock":
+                # JWM's Dock has a variable number of icons; reserve a modest
+                # preview area rather than silently omitting it from the layout.
+                items.append({"type": "dock", "w": 64})
             elif el.tag == "Clock":
                 items.append({"type": "clock", "format": el.get("format") or "%H:%M"})
         if items:
@@ -546,21 +554,60 @@ class App(tk.Tk):
             pass
         self._label(head, text=APP_NAME, font=("Sans", 11, "bold")).pack(side="left", padx=(6, 0))
 
-        self._label(left, text="THEMES", font=("Sans", 10, "bold")).pack(fill="x", pady=(0, 6))
-        self.listbox = tk.Listbox(left, relief="flat", bd=0, highlightthickness=1,
+        # Compact horizontal section navigation. The active section uses the
+        # same colors as JWM's selected menu item in the currently applied theme.
+        nav = self._frame(left)
+        nav.pack(fill="x", pady=(0, 10))
+        self.section_buttons = {}
+        for text, section in (("Themes", "themes"), ("Background", "background"), ("Menu", "menu")):
+            button = self._button(nav, text, lambda value=section: self.show_section(value))
+            button.configure(padx=5, pady=3, takefocus=1)
+            button.pack(side="left", fill="x", expand=True, padx=(0, 3))
+            self.section_buttons[section] = button
+
+        self.themes_panel = self._frame(left)
+        self.themes_panel.pack(fill="both", expand=True)
+        self._label(self.themes_panel, text="THEMES", font=("Sans", 10, "bold")).pack(fill="x", pady=(0, 6))
+        self.listbox = tk.Listbox(self.themes_panel, relief="flat", bd=0, highlightthickness=1,
                                   activestyle="none", width=24, font=("Sans", 10),
                                   exportselection=False)
-        self.listbox.pack(fill="y", expand=True)
+        self.listbox.pack(fill="both", expand=True)
         self.listbox.bind("<<ListboxSelect>>", lambda e: self.on_select())
         self.listbox.bind("<Double-Button-1>", lambda e: self.apply())
-
-        btns = self._frame(left)
+        btns = self._frame(self.themes_panel)
         btns.pack(fill="x", pady=(10, 0))
         for text, cmd in (("Apply", self.apply), ("Reset default", self.reset),
                           ("Reload list", self.refresh)):
             self._button(btns, text, cmd).pack(fill="x", pady=2)
 
-        self._label(right, text="PREVIEW", font=("Sans", 10, "bold")).pack(fill="x", pady=(0, 6))
+        self.background_panel = self._frame(left)
+        self._label(self.background_panel, text="BACKGROUND", font=("Sans", 10, "bold")).pack(fill="x", pady=(0, 8))
+        self.bg_mode = tk.StringVar(value="solid")
+        self.bg_default = tk.BooleanVar(value=False)
+        self.bg_color1 = tk.StringVar(value="#2b2b2b")
+        self.bg_color2 = tk.StringVar(value="#387cb0")
+        self.bg_radios = []
+        for text, value in (("Solid color", "solid"), ("Gradient", "gradient")):
+            radio = tk.Radiobutton(self.background_panel, text=text, variable=self.bg_mode,
+                                   value=value, command=self._background_changed, anchor="w",
+                                   bd=0, highlightthickness=0, padx=2, pady=2)
+            radio.pack(fill="x")
+            self.bg_radios.append(radio)
+        self._label(self.background_panel, text="Color 1").pack(fill="x", pady=(8, 2))
+        self.bg_swatch1 = self._button(self.background_panel, "#2b2b2b", lambda: self.choose_bg_color(1))
+        self.bg_swatch1.pack(fill="x")
+        self._label(self.background_panel, text="Color 2 (gradient)").pack(fill="x", pady=(8, 2))
+        self.bg_swatch2 = self._button(self.background_panel, "#387cb0", lambda: self.choose_bg_color(2))
+        self.bg_swatch2.pack(fill="x")
+        self._button(self.background_panel, "Apply to Theme", self.save_background).pack(fill="x", pady=(14, 3))
+        self._button(self.background_panel, "Use JWM Default Background", self.reset_background).pack(fill="x", pady=3)
+
+        self.menu_panel = self._frame(left)
+        self._label(self.menu_panel, text="MENU", font=("Sans", 10, "bold")).pack(fill="x", pady=(0, 6))
+        self.section = "themes"
+
+        self.preview_heading = self._label(right, text="PREVIEW", font=("Sans", 10, "bold"))
+        self.preview_heading.pack(fill="x", pady=(0, 6))
         self.canvas = tk.Canvas(right, highlightthickness=1, bd=0)
         self.canvas.pack(fill="both", expand=True)
         self.canvas.bind("<Configure>", lambda e: self.schedule_draw())
@@ -708,6 +755,39 @@ class App(tk.Tk):
                               highlightcolor=p["edge"])
         for b in self._buttons:
             self._style_button(b)
+        self._style_background_radios()
+        self._style_section_buttons()
+
+    def _style_background_radios(self):
+        """Use JWM's active-menu colors for the selected background option."""
+        p = self.pal
+        selected = self.bg_mode.get() if hasattr(self, "bg_mode") else "solid"
+        for radio in getattr(self, "bg_radios", []):
+            active = radio.cget("value") == selected
+            bg = p["sel_bg"] if active else p["bg"]
+            fg = p["sel_fg"] if active else p["fg"]
+            radio.configure(bg=bg, fg=fg, selectcolor=p["sel_bg"],
+                            activebackground=p["sel_bg"] if active else p["bg"],
+                            activeforeground=p["sel_fg"] if active else p["fg"],
+                            disabledforeground=p["muted"], relief="flat", bd=0,
+                            highlightthickness=0)
+
+    def _style_section_buttons(self):
+        """Make section navigation match the currently applied JWM theme."""
+        if not hasattr(self, "section_buttons"):
+            return
+        p = self.pal
+        for section, button in self.section_buttons.items():
+            if section == getattr(self, "section", "themes"):
+                # JWM selected menu item: Active background/foreground.
+                button.configure(bg=p["sel_bg"], fg=p["sel_fg"],
+                                 activebackground=p["sel_bg"], activeforeground=p["sel_fg"])
+                if p["motif"]:
+                    button.configure(relief="sunken", bd=2, highlightthickness=0)
+                else:
+                    button.configure(relief="sunken", bd=1, highlightthickness=0)
+            else:
+                self._style_button(button)
 
     # -- actions
     def refresh(self):
@@ -745,6 +825,7 @@ class App(tk.Tk):
             if self.theme["note"]:
                 msg += " - " + self.theme["note"]
         self.set_status(msg)
+        self.load_background_controls()
         self.draw()
 
     def set_status(self, msg):
@@ -810,6 +891,208 @@ class App(tk.Tk):
             self.listbox.selection_clear(0, "end")
             self.listbox.selection_set(items.index(DEFAULT_NAME))
             self.on_select()
+
+    def show_section(self, section):
+        self.section = section
+        self._style_section_buttons()
+        for panel in (self.themes_panel, self.background_panel, self.menu_panel):
+            panel.pack_forget()
+        panel = {"themes": self.themes_panel, "background": self.background_panel,
+                 "menu": self.menu_panel}[section]
+        panel.pack(fill="both", expand=True)
+        if section == "background":
+            self.load_background_controls()
+            self._label_preview_mode("WALLPAPER")
+        else:
+            self._label_preview_mode("PREVIEW")
+        self.draw()
+
+    def _label_preview_mode(self, value):
+        # The heading is the first label packed in the right-hand column.
+        # Store the preview heading explicitly when available.
+        if hasattr(self, "preview_heading"):
+            self.preview_heading.config(text=value)
+
+    def load_background_controls(self):
+        if not self.theme or self.theme.get("error"):
+            return
+        spec = self.theme.get("colors", {}).get("desktop", "#2b2b2b")
+        colors = split_grad(spec)
+        defined = self.theme.get("desktop_defined", False)
+        c1 = colors[0] if colors and defined else "#000000"
+        c2 = colors[1] if len(colors) > 1 else "#387cb0"
+        self.bg_color1.set(c1)
+        self.bg_color2.set(c2)
+        self.bg_mode.set("gradient" if len(colors) > 1 else "solid")
+        self.bg_default.set(not self.theme.get("desktop_defined", False))
+        self._update_bg_swatches()
+
+    def _update_bg_swatches(self):
+        for button, var in ((self.bg_swatch1, self.bg_color1), (self.bg_swatch2, self.bg_color2)):
+            color = var.get()
+            button.config(text=color, bg=color, activebackground=color)
+            try:
+                r, g, b = self.winfo_rgb(color)
+                fg = "#000000" if (r + g + b) / 3 > 32767 else "#ffffff"
+            except tk.TclError:
+                fg = "#ffffff"
+            button.config(fg=fg, activeforeground=fg)
+
+    def choose_bg_color(self, which):
+        var = self.bg_color1 if which == 1 else self.bg_color2
+        try:
+            initial = var.get() if self._valid(var.get()) else "#2b2b2b"
+            result = colorchooser.askcolor(color=initial, parent=self, title="Choose background color")
+            if result and result[1]:
+                var.set(result[1])
+                self._update_bg_swatches()
+                self._background_changed()
+        except Exception as exc:
+            self.set_status("Color selection error: %s" % exc)
+
+    def _background_changed(self):
+        self.bg_default.set(False)
+        self._style_background_radios()
+        if self.section == "background":
+            self.draw()
+
+    def draw_background_preview(self, w, h):
+        c = self.canvas
+        if self.bg_default.get():
+            spec = ("#000000", None)  # JWM's unconfigured desktop background preview
+        elif self.bg_mode.get() == "gradient":
+            spec = (self.bg_color1.get(), self.bg_color2.get())
+        else:
+            spec = (self.bg_color1.get(), None)
+        if not self._valid(spec[0]) or (spec[1] and not self._valid(spec[1])):
+            spec = ("#2b2b2b", None)
+        self._fill(0, 0, w, h, spec, vertical=True)
+        raw = self.theme or {}
+        if not raw or raw.get("error"):
+            return
+        col = raw["colors"]
+        memo = {}
+        def S(key):
+            if key not in memo:
+                memo[key] = self._spec(col, key)
+            return memo[key]
+        C = lambda key: S(key)[0]
+        fam = self._ui_font(raw["font"])
+        F = lambda size=9, bold=False: (fam, size, "bold") if bold else (fam, size)
+        self._draw_tray(w, h, raw, S, C, F, col)
+
+    def _write_background(self, mode, c1, c2=None):
+        path = theme_path(self.selected() or self.current or "")
+        if not path or not os.path.isfile(path):
+            self.set_status("Select a valid theme first")
+            return False
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                data = f.read()
+            bg_re = re.compile(r"<Background\b([^>]*)>(.*?)</Background>", re.S)
+            default_marker = re.compile(r"<!--\s*JWManager default background: (none|\s*<Background\b.*?</Background>)\s*-->", re.S)
+            has_default_marker = bool(default_marker.search(data))
+            desktop_blocks = list(re.finditer(r"<Desktops\b([^>]*)>(.*?)</Desktops>", data, re.S))
+            target = None
+            for block in desktop_blocks:
+                body = block.group(2)
+                for match in bg_re.finditer(body):
+                    absolute_start = block.start(2) + match.start()
+                    if data.rfind("<!--", 0, absolute_start) > data.rfind("-->", 0, absolute_start):
+                        continue
+                    target = (block, match)
+                    break
+                if target:
+                    break
+
+            if mode == "default":
+                # Restore the original theme background if we saved one; otherwise
+                # comment out the custom entry so JWM uses its own default.
+                if has_default_marker:
+                    if target:
+                        block, match = target
+                        old = match.group(0)
+                        abs_start = block.start(2) + match.start()
+                        abs_end = block.start(2) + match.end()
+                        data = data[:abs_start] + "<!-- JWManager custom background: " + old + " -->" + data[abs_end:]
+                    marker_match = default_marker.search(data)
+                    if marker_match and marker_match.group(1).strip() == "none":
+                        data = default_marker.sub("", data, count=1)
+                    else:
+                        data = default_marker.sub(lambda m: m.group(1), data, count=1)
+                elif target:
+                    block, match = target
+                    old = match.group(0)
+                    abs_start = block.start(2) + match.start()
+                    abs_end = block.start(2) + match.end()
+                    data = data[:abs_start] + "<!-- JWManager custom background: " + old + " -->" + data[abs_end:]
+            else:
+                value = c1 if mode == "solid" else c1 + ":" + c2
+                new = '<Background type="%s">%s</Background>' % (mode, value)
+                if target:
+                    block, match = target
+                    old = match.group(0)
+                    abs_start = block.start(2) + match.start()
+                    abs_end = block.start(2) + match.end()
+                    if has_default_marker:
+                        replacement = new
+                    else:
+                        # Preserve the theme's original background so Reset can restore it.
+                        replacement = "<!-- JWManager default background: " + old + " -->" + new
+                    data = data[:abs_start] + replacement + data[abs_end:]
+                else:
+                    # Insert into an existing Desktops section, expanding self-closing tags if needed.
+                    self_closing = re.search(r"<Desktops\b([^>]*)/>", data)
+                    if self_closing:
+                        replacement = "<Desktops%s><!-- JWManager default background: none -->%s</Desktops>" % (self_closing.group(1), new)
+                        data = data[:self_closing.start()] + replacement + data[self_closing.end():]
+                    else:
+                        opening = re.search(r"<Desktops\b[^>]*>", data)
+                        if opening:
+                            marker = "" if has_default_marker else "<!-- JWManager default background: none -->"
+                            data = data[:opening.end()] + marker + new + data[opening.end():]
+                        else:
+                            data += "\n<Desktops><!-- JWManager default background: none -->" + new + "</Desktops>\n"
+            shutil.copy2(path, path + ".bak")
+            with open(path, "w", encoding="utf-8") as f:
+                f.write(data)
+            _PARSE_CACHE.pop(path, None)
+            self.theme = parse_theme(path)
+            self.load_background_controls()
+            self.draw()
+            return True
+        except Exception as exc:
+            self.set_status("Background update error: %s" % exc)
+            return False
+
+    def save_background(self):
+        if not self.current:
+            self.set_status("Select a theme first")
+            return
+        self.bg_default.set(False)
+        c1, c2 = self.bg_color1.get().strip(), self.bg_color2.get().strip()
+        if not self._valid(c1) or (self.bg_mode.get() == "gradient" and not self._valid(c2)):
+            self.set_status("One of the selected colors is invalid")
+            return
+        if self._write_background(self.bg_mode.get(), c1, c2):
+            # Keep the theme file and the live ~/.jwmrc in sync, then restart JWM.
+            self.set_status("Applying background from theme '%s' ..." % self.current)
+            self.apply_file(self.current)
+            self.show_section("background")
+
+    def reset_background(self):
+        if not self.current:
+            self.set_status("Select a theme first")
+            return
+        if self._write_background("default", None):
+            self.bg_mode.set("solid")
+            self.bg_default.set(True)
+            self.bg_color1.set("#000000")
+            self.bg_color2.set("#387cb0")
+            self._update_bg_swatches()
+            self.set_status("Applying JWM default background ...")
+            self.apply_file(self.current)
+            self.draw()
 
     # -- preview
     def _valid(self, color):
@@ -980,6 +1263,9 @@ class App(tk.Tk):
         H = ay2 - ay1
 
         # desktop background (solid or vertical gradient)
+        if self.section == "background":
+            self.draw_background_preview(w, h)
+            return
         self._fill(0, 0, w, h, S("desktop"), vertical=True)
 
         bw = raw["border"]
@@ -1057,7 +1343,13 @@ class App(tk.Tk):
                 fg = C("menu_fg")
             c.create_text(mx + 10, iy + ih / 2, text=label, anchor="w", fill=fg, font=F(9))
 
-        # tray: elements are drawn in the order of the <Tray> section
+        self._draw_tray(w, h, raw, S, C, F, col)
+
+    def _draw_tray(self, w, h, raw, S, C, F, col):
+        # Shared tray renderer used by both Themes and Background previews
+        c = self.canvas
+        tray_h = raw["tray_h"]
+        top_tray = raw["tray_pos"] == "top"
         ty = 0 if top_tray else h - tray_h
         tmotif = raw["tray_deco"] == "motif"
         self._fill(0, ty, w, ty + tray_h, S("tray_bg"), vertical=True)
@@ -1095,6 +1387,8 @@ class App(tk.Tk):
                 return ndesk * cell
             if kind == "swallow":
                 return min(it["w"], 40) + 2
+            if kind == "dock":
+                return max(24, min(it.get("w", 64), tray_h * 3))
             if kind == "clock":
                 return 14 + 7 * len(self._clock_text(it["format"]))
             if kind == "button":
@@ -1168,6 +1462,9 @@ class App(tk.Tk):
                 c.create_oval(sx + 3, mid - sz / 2 + 3, sx + sz - 3, mid + sz / 2 - 3,
                               outline="#d8d8d8")
                 c.create_line(sx + sz / 2, mid, sx + sz - 6, mid - 2, fill="#2a6f73", width=2)
+            elif kind == "dock":
+                # JWM populates the Dock at runtime; keep its space empty in the preview.
+                pass
             elif kind == "clock":
                 if "clock_bg" in col:
                     self._fill(x, y1, x + wd, y2, S("clock_bg"))
