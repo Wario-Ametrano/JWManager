@@ -44,8 +44,8 @@ sudo apt install python3-pil python3-pil.imagetk
 With git:
 
 ```bash
-git clone https://github.com/YOUR-USERNAME/REPOSITORY-NAME.git
-cd REPOSITORY-NAME
+git clone https://github.com/Wario-Ametrano/JWManager.git
+cd JWManager
 ```
 
 Or download the `jwmaneger.py` file from the project's GitHub page (green **Code → Download ZIP** button).
@@ -68,7 +68,7 @@ python3 ~/.jwm/jwmaneger.py
 
 Launch from the JWM menu (recommended)
 ```xml
-<Program icon="/home/YOUR-USER/.jwm/icons/jwmanager.png" label="jwmanager">python3 ~/.jwm/jwmanager.py</Program>
+<Program icon=".jwm/icons/jwmanager.png" label="jwmanager">python3 ~/.jwm/jwmanager.py</Program>
 ```
 ### Adding a new theme
 
