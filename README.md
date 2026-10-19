@@ -8,11 +8,9 @@ A small graphical program to **switch themes in JWM** without having to edit you
 ## Features
 
 - Shows a **list of themes** stored in the `~/.jwm/themes` folder.
-- Shows a **preview** (active and inactive window, menu, panel, pager, clock) that changes with each selected theme.
 - **Apply** a theme: copies its file to `~/.jwmrc` and restarts JWM.
 - **Reset default** to go back to your original configuration.
-- Reproduces both JWM looks: **motif** (retro, raised Windows 98-style bevels, `decorations="motif"`) and **flat** (no bevels, the default when the attribute is missing).
-- The app **takes on the look of the theme you applied**: its colors and button style follow your JWM theme (see below).
+- Reproduces both JWM looks.
 
 ## Requirements
 
@@ -31,12 +29,6 @@ Open a terminal and run:
 ```bash
 sudo apt update
 sudo apt install python3 python3-tk
-```
-
-Optional (logo in the preview):
-
-```bash
-sudo apt install python3-pil python3-pil.imagetk
 ```
 
 ### 2. Download the program
