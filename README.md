@@ -68,7 +68,7 @@ python3 ~/.jwm/jwmaneger.py
 
 Launch from the JWM menu (recommended)
 ```xml
-<Program icon="/home/YOUR-USER/.jwm/icons/jwmaneger.png" label="jwmaneger">python3 ~/.jwm/jwmaneger.py</Program>
+<Program icon="/home/YOUR-USER/.jwm/icons/jwmanager.png" label="jwmanager">python3 ~/.jwm/jwmanager.py</Program>
 ```
 ### Adding a new theme
 
