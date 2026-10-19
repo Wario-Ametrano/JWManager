@@ -48,14 +48,14 @@ git clone https://github.com/Wario-Ametrano/JWManager.git
 cd JWManager
 ```
 
-Or download the `jwmaneger.py` file from the project's GitHub page (green **Code → Download ZIP** button).
+Or download the `jwmanager.py` file from the project's GitHub page (green **Code → Download ZIP** button).
 
 ### 3. Put it in the JWM folder
 
 ```bash
 mkdir -p ~/.jwm
-cp jwmaneger.py ~/.jwm/
-chmod +x ~/.jwm/jwmaneger.py
+cp jwmanager.py ~/.jwm/
+chmod +x ~/.jwm/jwmanager.py
 ```
 
 ## Running
@@ -63,7 +63,7 @@ chmod +x ~/.jwm/jwmaneger.py
 From a terminal:
 
 ```bash
-python3 ~/.jwm/jwmaneger.py
+python3 ~/.jwm/jwmanager.py
 ```
 
 Launch from the JWM menu (recommended)
@@ -116,12 +116,12 @@ If that works, check that the `jwm` command is in your PATH (`which jwm`).
 **A theme doesn't show up in the list**
 Check that the file `~/.jwm/themes/THEME-NAME/.jwmrc` exists (with the leading dot) and press **Reload list**. Folders starting with a dot are ignored.
 **The logo doesn't appear**
-Put a `png` named `jwm-logo.png` in `~/.jwm/`. (Files starting with `jwmaneger`, like the app icon, are never used as the JWM logo.)
+Put a `png` named `jwm-logo.png` in `~/.jwm/`. (Files starting with `jwmanager`, like the app icon, are never used as the JWM logo.)
 
 ## Uninstall
 
 ```bash
-rm ~/.jwm/jwmaneger.py ~/.jwm/jwmaneger-cache.json
+rm ~/.jwm/jwmanager.py ~/.jwm/jwmanager-cache.json
 ```
 
 Your themes in `~/.jwm/themes` stay where they are.
