@@ -1,4 +1,4 @@
-# jwmaneger
+# JWManeger
 
 
 A small graphical program to **switch themes in JWM** without having to edit your `~/.jwmrc` file by hand every time.Pick a theme from the list, check the preview, press **Apply**, and JWM instantly reloads with the new theme.
@@ -82,12 +82,12 @@ Launch from the JWM menu (recommended)
    ```
 3. In the program, press **Reload list**.
 
-To save the configuration you are using right now as a theme:
+   To save the configuration you are using right now as a theme:
 
-```bash
-mkdir -p ~/.jwm/themes/my-theme
-cp ~/.jwmrc ~/.jwm/themes/my-theme/.jwmrc
-```
+   ```bash
+   mkdir -p ~/.jwm/themes/my-theme
+   cp ~/.jwmrc ~/.jwm/themes/my-theme/.jwmrc
+   ```
 
 ### Using the program
 
