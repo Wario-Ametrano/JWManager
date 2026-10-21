@@ -6,6 +6,9 @@ Each theme is a folder inside ~/.jwm/themes that contains a .jwmrc file:
 The folder name is the theme name. Pressing "Apply" copies the file to
 ~/.jwmrc and restarts JWM. The colors and button style of the app itself
 follow the theme that is currently applied.
+
+The window icon is the file ~/.jwm/jwmanager.png. If that file does not exist
+the window simply has no icon.
 """
 import filecmp
 import glob
@@ -21,15 +24,17 @@ import tkinter.font as tkfont
 from tkinter import colorchooser
 import xml.etree.ElementTree as ET
 
-APP_NAME = "JWManager"      # window title, header and WM class
+APP_NAME = "JWManager"      # window title and WM class
 
 HOME = os.path.expanduser("~")
-THEMES_DIR = os.path.join(HOME, ".jwm", "themes")
+JWM_DIR = os.path.join(HOME, ".jwm")
+THEMES_DIR = os.path.join(JWM_DIR, "themes")
 TARGET = os.path.join(HOME, ".jwmrc")
 THEME_FILE = ".jwmrc"
-DEFAULT_NAME = "default"
+DEFAULT_NAME = "Default"
 SYSTEM_RC = "/etc/jwm/system.jwmrc"
-CACHE_FILE = os.path.join(HOME, ".jwm", "jwmanager-cache.json")   # remembers the logo path
+ICON_FILE = os.path.join(JWM_DIR, "jwmanager.png")            # the only icon used
+CACHE_FILE = os.path.join(JWM_DIR, "jwmanager-cache.json")    # remembers the logo path
 
 # Symbol (Nerd Font) shown on the panel menu button of the preview.
 # To change it, put the code of your symbol here, e.g. "\uf17b8" or "\ue795".
@@ -41,86 +46,9 @@ DEFAULT_PALETTE = {
     "bg": "#000000", "fg": "#d8d8d8", "muted": "#8a8a8a", "edge": "#3a3a3a",
     "sel_bg": "#e0e0e0", "sel_fg": "#000000",
     "btn_bg": "#000000", "btn_fg": "#d8d8d8",
-    "act_bg": "#e0e0e0", "act_fg": "#000000", "motif": False,
+    "act_bg": "#e0e0e0", "act_fg": "#000000",
+    "tab_bg": "#e0e0e0", "tab_fg": "#000000", "motif": False,
 }
-
-# Application icon (PNG, base64): 64 px for the window, 24 px for the header.
-ICON_64 = (
-    "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"
-    "j0A6FV3w4EkAAAAASUVORK5CYII="
-)
-ICON_24 = (
-    "iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAYAAADgdz34AAAEO0lEQVR42p2WTWxUVRTHf+e++958"
-    "2DLDTFsJrRpBKhGi7aLWsmFfTZomJviVJrI2QRYGwsKmCYuuSIwJYWciCz9jBVdsXWHTRmo0TE0V"
-    "bByFaen0Yyjz8d49LkrHmZbvu3v33nP/53/O//zzBDCAO3HiROry5csjKysrfc65OCA83lJjTGXH"
-    "jh1Thw4d+nx8fLwIGAEYHh4+mMvlvllaWtofhiGqypMsEcFaSyaT+b27u/vIhQsXrsixY8fSly5d"
-    "ms7n83vK5XJYCyN5/OTrJPCtp/F43O7evXt+cHCw105PT48Ui8U9tVotPHDgJbu362miMETkwSBb"
-    "T1UVz1r+yBe4enU2LBaLz05OTh61a2trA2EYaqVclndHjrJ08Aj5G0sY3wO998tOIXJaB1KAMGJX"
-    "x04G5ib46MMPJAyTWiqVBqyqWgUxAqVyhXOTSxT/XoLgPgCqEPN485UMVxfKPJsKuFGqkg4M5ZWI"
-    "YK2Mb0BRUVVrG2ONGNLpNMvrIL7hnr1WSMYM2WyGbFQmmw6oBVXSMcPOVCtGmuNsgwQQVyP127fs"
-    "+OsfbMznfmJyqnwxuUFwRjZIuVqNZzp38c4LNVxD/2ydthjEhWR/Oc9iLkc8Hr+/XBt0poARoVyp"
-    "sKu4D/P8MGDq53abElrb2Pty34MBtpRMjHD79jrOM6g268tuHZSoVqVw499HAtiUsohQLpdpb29n"
-    "q7q3MbDW0tHR8VAAEWF+fp719XU8z6NSqdDW1rbtnt26EUURhUKBWCz2UAARIZFIoKo45zDGPBhA"
-    "RAjDkFQqVQ98lBJdv36dUqnEnTt3tjmAbSyPqjIyMsLCwgK+7z+a+9yNq9VqtLe3c/PmzabELIBz"
-    "jmQyydmzZ0mlUqjq/xbQ5DzalPnmQ41Zr6yskEwmcc41M9hUgqriZOMpAYyCqNvUI04F56KNyTcG"
-    "EWkCqlQqTYB28+Lq6iqnTp3ixf37WSssEPMsDih7QuTFNwYxquFLRCKRqCcURRGe59V7Nzc3x+nT"
-    "p0mlUtub/FQiwfmvvuSNH2fpCwOuBRGf7knz68DHuJZO/NwPvJe8wvgn54gHPmNjY8zMzNDf38/y"
-    "8jKFQoHe3t5mBiISbhbXGEMykYCWJGEUoH5EMpGg1ToiGxKLGfwgRrVSQdRhrSUej+N5HtZaEokE"
-    "nufV+y8ioW1pafkpCIK3AC0sLjI0+DrLrw0w5VkU5W0AuQZcg44WhH6+n/gOgK6uLrq6ugDIZDL0"
-    "9PSQy+Vwzqnv+5JMJifl5MmTOycmJn7O5/PPqWoYBIGISF1B0qCe+tc91LO5X61WVURsZ2dn/vDh"
-    "wz0CMDQ01DM7O/v1rVu39lWrVRp9Wu9aed3YUBoNR1WbgIIgIJvN/tnd3X3k4sWLUzI6OmrGxsbc"
-    "8ePHM9PT0++vrq6+6pyLPelvS2tr61RfX99nZ86cWRwdHTX/AcBS8trdnZWVAAAAAElFTkSuQmCC"
-)
 
 
 # ---------------------------------------------------------------- parsing
@@ -355,6 +283,9 @@ LOGO_EXT = (".png", ".gif", ".ppm", ".xpm", ".jpg", ".jpeg", ".bmp")
 
 
 _LOGO_MEMO = {}
+_SYSTEM_LOGO = {"done": False, "path": None}
+SYSTEM_ICON_DIRS = ["/usr/share/pixmaps", "/usr/local/share/pixmaps", "/usr/share/jwm",
+                    "/usr/share/icons/hicolor/*/apps", "/usr/share/icons/*/*/apps"]
 
 
 def _load_cache():
@@ -376,45 +307,46 @@ def _save_cache(data):
 
 
 def _search_logo(dirs):
-    """One pass over the folders. Preference: file type first, then folder order."""
+    """One pass over the folders. Preference: file type first, then folder order.
+    Files starting with the app name (our own icon) are never used as the logo."""
     found = []
+    own = APP_NAME.lower()
     for rank, d in enumerate(dirs):
         for f in glob.glob(os.path.join(d, "jwm*")):
             ext = os.path.splitext(f)[1].lower()
             if (ext in LOGO_EXT and os.path.isfile(f)
-                    and not os.path.basename(f).lower().startswith(APP_NAME.lower())):
+                    and not os.path.basename(f).lower().startswith(own)):
                 found.append((LOGO_EXT.index(ext), rank, f))
     return min(found)[2] if found else None
 
 
-def find_logo(icon_paths):
-    """Look for the JWM logo. Order: ~/.jwm/jwm-logo.*, the theme's IconPath,
-    ~/.jwm/icons, pixmaps and system icons. The first jwm*.<ext> file wins.
-    Files starting with the app name (our own icon) are skipped.
+def scan_system_logo():
+    """Search the system icon folders ONCE. This can take a while on big icon sets,
+    so the app runs it in a background thread and remembers the result on disk."""
+    if _SYSTEM_LOGO["done"]:
+        return
+    cache = _load_cache()
+    path = cache.get("system_logo")
+    if not (path and os.path.isfile(path)):
+        path = _search_logo(SYSTEM_ICON_DIRS)
+        if path:
+            cache["system_logo"] = path
+            _save_cache(cache)
+    _SYSTEM_LOGO["path"] = path
+    _SYSTEM_LOGO["done"] = True
 
-    The search can be slow (system icon folders hold thousands of files), so the
-    result is remembered in memory and in a small cache file: it runs once, not
-    on every redraw."""
-    key = "|".join(icon_paths)
+
+def find_logo(icon_paths):
+    """Look for the JWM logo: ~/.jwm, the theme's IconPath, ~/.jwm/icons, then the
+    system icons (found by scan_system_logo). Cheap: it never scans the system."""
+    key = tuple(icon_paths)
     if key in _LOGO_MEMO:
         return _LOGO_MEMO[key]
-    own = os.path.join(HOME, ".jwm")
-    path = _search_logo([own])                  # cheap: a user-placed logo always wins
-    if not path:
-        cache = _load_cache()
-        cached = cache.get("logo", {}).get(key)
-        if cached and os.path.isfile(cached):
-            path = cached
-        else:
-            dirs = [os.path.expanduser(x) for x in icon_paths]
-            dirs += [os.path.join(own, "icons"), "/usr/share/pixmaps",
-                     "/usr/local/share/pixmaps", "/usr/share/jwm",
-                     "/usr/share/icons/hicolor/*/apps", "/usr/share/icons/*/*/apps"]
-            path = _search_logo(dirs)
-            if path:
-                cache.setdefault("logo", {})[key] = path
-                _save_cache(cache)
-    _LOGO_MEMO[key] = path
+    dirs = [JWM_DIR] + [os.path.expanduser(p) for p in icon_paths]
+    dirs.append(os.path.join(JWM_DIR, "icons"))
+    path = _search_logo(dirs) or _SYSTEM_LOGO["path"]
+    if path or _SYSTEM_LOGO["done"]:        # do not remember "not found" while scanning
+        _LOGO_MEMO[key] = path
     return path
 
 
@@ -525,112 +457,115 @@ def reload_jwm():
     return False, last
 
 
+# ------------------------------------------------------------ desktop background in a theme file
+_BG_RE = re.compile(r"<Background\b([^>]*)>(.*?)</Background>", re.S)
+_DEFAULT_BG_MARK = re.compile(
+    r"<!--\s*JWManager default background: (none|\s*<Background\b.*?</Background>)\s*-->", re.S)
+_DESKTOPS_RE = re.compile(r"<Desktops\b([^>]*)>(.*?)</Desktops>", re.S)
+
+
+def _find_active_background(data):
+    """(start, end, text) of the first <Background> inside <Desktops> that is not
+    inside an XML comment, or None."""
+    for block in _DESKTOPS_RE.finditer(data):
+        body_start = block.start(2)
+        for m in _BG_RE.finditer(block.group(2)):
+            start = body_start + m.start()
+            if data.rfind("<!--", 0, start) > data.rfind("-->", 0, start):
+                continue
+            return start, body_start + m.end(), m.group(0)
+    return None
+
+
+def rewrite_background(data, mode, c1=None, c2=None):
+    """Return the theme text with the desktop background changed.
+
+    mode "solid" / "gradient": set the color(s). The theme's original background is
+    kept inside a comment so that mode "default" can restore it later.
+    mode "default": go back to the original background (or none)."""
+    found = _find_active_background(data)
+    has_marker = bool(_DEFAULT_BG_MARK.search(data))
+    if mode == "default":
+        if has_marker:
+            if found:
+                s, e, old = found
+                data = data[:s] + "<!-- JWManager custom background: " + old + " -->" + data[e:]
+            m = _DEFAULT_BG_MARK.search(data)
+            if m and m.group(1).strip() == "none":
+                data = _DEFAULT_BG_MARK.sub("", data, count=1)
+            else:
+                data = _DEFAULT_BG_MARK.sub(lambda mm: mm.group(1), data, count=1)
+        elif found:
+            s, e, old = found
+            data = data[:s] + "<!-- JWManager custom background: " + old + " -->" + data[e:]
+        return data
+
+    value = c1 if mode == "solid" else c1 + ":" + c2
+    new = '<Background type="%s">%s</Background>' % (mode, value)
+    if found:
+        s, e, old = found
+        repl = new if has_marker else "<!-- JWManager default background: " + old + " -->" + new
+        return data[:s] + repl + data[e:]
+    closed = re.search(r"<Desktops\b([^>]*)/>", data)       # <Desktops ... />
+    if closed:
+        repl = "<Desktops%s><!-- JWManager default background: none -->%s</Desktops>" % (
+            closed.group(1), new)
+        return data[:closed.start()] + repl + data[closed.end():]
+    opening = re.search(r"<Desktops\b[^>]*>", data)
+    if opening:
+        marker = "" if has_marker else "<!-- JWManager default background: none -->"
+        return data[:opening.end()] + marker + new + data[opening.end():]
+    block = "\n<Desktops><!-- JWManager default background: none -->" + new + "</Desktops>\n"
+    end = data.rfind("</JWM>")                 # keep the XML valid: add it inside <JWM>
+    return data + block if end < 0 else data[:end] + block + data[end:]
+
+
 # -------------------------------------------------------------------- GUI
+_HEX6 = re.compile(r"^#([0-9a-fA-F]{2})([0-9a-fA-F]{2})([0-9a-fA-F]{2})$")
+
+
 class App(tk.Tk):
+    PANEL_W = 238         # width of the left column (list + buttons)
+
     def __init__(self):
         super().__init__(className=APP_NAME)
         self.title(APP_NAME)
         self.iconname(APP_NAME)
-        self.geometry("760x460")
-        self.minsize(640, 400)
+        self.geometry("762x472")
+        self.minsize(660, 420)
         self.pal = dict(DEFAULT_PALETTE)
         self._frames, self._labels, self._buttons = [], [], []
-        self._set_window_icon()
-
-        ensure_setup()
-
-        left = self._frame(self)
-        left.pack(side="left", fill="y", padx=(12, 6), pady=12)
-        right = self._frame(self)
-        right.pack(side="left", fill="both", expand=True, padx=(6, 12), pady=12)
-
-        # header: icon + app name
-        head = self._frame(left)
-        head.pack(fill="x", pady=(0, 12))
-        try:
-            self._header_icon = tk.PhotoImage(data=ICON_24, master=self)
-            self._label(head, image=self._header_icon).pack(side="left")
-        except tk.TclError:
-            pass
-        self._label(head, text=APP_NAME, font=("Sans", 11, "bold")).pack(side="left", padx=(6, 0))
-
-        # Compact horizontal section navigation. The active section uses the
-        # same colors as JWM's selected menu item in the currently applied theme.
-        nav = self._frame(left)
-        nav.pack(fill="x", pady=(0, 10))
-        self.section_buttons = {}
-        for text, section in (("Themes", "themes"), ("Background", "background"), ("Menu", "menu")):
-            button = self._button(nav, text, lambda value=section: self.show_section(value))
-            button.configure(padx=5, pady=3, takefocus=1)
-            button.pack(side="left", fill="x", expand=True, padx=(0, 3))
-            self.section_buttons[section] = button
-
-        self.themes_panel = self._frame(left)
-        self.themes_panel.pack(fill="both", expand=True)
-        self._label(self.themes_panel, text="THEMES", font=("Sans", 10, "bold")).pack(fill="x", pady=(0, 6))
-        self.listbox = tk.Listbox(self.themes_panel, relief="flat", bd=0, highlightthickness=1,
-                                  activestyle="none", width=24, font=("Sans", 10),
-                                  exportselection=False)
-        self.listbox.pack(fill="both", expand=True)
-        self.listbox.bind("<<ListboxSelect>>", lambda e: self.on_select())
-        self.listbox.bind("<Double-Button-1>", lambda e: self.apply())
-        btns = self._frame(self.themes_panel)
-        btns.pack(fill="x", pady=(10, 0))
-        for text, cmd in (("Apply", self.apply), ("Reset default", self.reset),
-                          ("Reload list", self.refresh)):
-            self._button(btns, text, cmd).pack(fill="x", pady=2)
-
-        self.background_panel = self._frame(left)
-        self._label(self.background_panel, text="BACKGROUND", font=("Sans", 10, "bold")).pack(fill="x", pady=(0, 8))
-        self.bg_mode = tk.StringVar(value="solid")
-        self.bg_default = tk.BooleanVar(value=False)
-        self.bg_color1 = tk.StringVar(value="#2b2b2b")
-        self.bg_color2 = tk.StringVar(value="#387cb0")
-        self.bg_radios = []
-        for text, value in (("Solid color", "solid"), ("Gradient", "gradient")):
-            radio = tk.Radiobutton(self.background_panel, text=text, variable=self.bg_mode,
-                                   value=value, command=self._background_changed, anchor="w",
-                                   bd=0, highlightthickness=0, padx=2, pady=2)
-            radio.pack(fill="x")
-            self.bg_radios.append(radio)
-        self._label(self.background_panel, text="Color 1").pack(fill="x", pady=(8, 2))
-        self.bg_swatch1 = self._button(self.background_panel, "#2b2b2b", lambda: self.choose_bg_color(1))
-        self.bg_swatch1.pack(fill="x")
-        self._label(self.background_panel, text="Color 2 (gradient)").pack(fill="x", pady=(8, 2))
-        self.bg_swatch2 = self._button(self.background_panel, "#387cb0", lambda: self.choose_bg_color(2))
-        self.bg_swatch2.pack(fill="x")
-        self._button(self.background_panel, "Apply to Theme", self.save_background).pack(fill="x", pady=(14, 3))
-        self._button(self.background_panel, "Use JWM Default Background", self.reset_background).pack(fill="x", pady=3)
-
-        self.menu_panel = self._frame(left)
-        self._label(self.menu_panel, text="MENU", font=("Sans", 10, "bold")).pack(fill="x", pady=(0, 6))
-        self.section = "themes"
-
-        self.preview_heading = self._label(right, text="PREVIEW", font=("Sans", 10, "bold"))
-        self.preview_heading.pack(fill="x", pady=(0, 6))
-        self.canvas = tk.Canvas(right, highlightthickness=1, bd=0)
-        self.canvas.pack(fill="both", expand=True)
-        self.canvas.bind("<Configure>", lambda e: self.schedule_draw())
-
-        self.status = tk.Label(right, text="", anchor="w", justify="left",
-                               wraplength=440, font=("Sans", 9))
-        self.status.pack(fill="x", pady=(8, 0))
-
+        self._rgb_cache, self._edge_cache = {}, {}
+        self._fam_cache, self._font_memo = None, {}
+        self._draw_job, self._drawn_key = None, None
+        self._status_wrap = 0
+        self._theme_rev = 0
+        self._busy = False
+        self._styled = False
         self.theme = None
         self.current = None
-        self._draw_job = None
-        self._busy = False
-        self._fam_cache = None
-        self._valid_cache = {}
-        self._font_memo = {}
+        self.section = "themes"
+
+        self._load_window_icon()
+        ensure_setup()
+        self._build_ui()
         self.restyle()           # colors of the app follow the applied theme
         self.refresh()
         self.listbox.focus_set()
-        self.after(400, self._poll)
+        self._start_logo_scan()
+
+    # -- window icon: only ~/.jwm/jwmanager.png, nothing built in
+    def _load_window_icon(self):
+        try:
+            if os.path.isfile(ICON_FILE):
+                self._icon = tk.PhotoImage(file=ICON_FILE, master=self)
+                self.iconphoto(True, self._icon)
+        except tk.TclError:
+            pass                 # unreadable file: no icon
 
     # -- small widget factories (so restyle() can recolor everything later)
-    def _frame(self, parent):
-        f = tk.Frame(parent)
+    def _frame(self, parent, **kw):
+        f = tk.Frame(parent, **kw)
         self._frames.append(f)
         return f
 
@@ -644,15 +579,115 @@ class App(tk.Tk):
         self._buttons.append(b)
         return b
 
-    def _set_window_icon(self):
-        try:
-            self._icon64 = tk.PhotoImage(data=ICON_64, master=self)
-            self.iconphoto(True, self._icon64)
-        except tk.TclError:
-            pass
+    # -- layout (see the mockup): tabs + status on top, list/buttons left, preview right
+    def _build_ui(self):
+        main = self._frame(self)
+        main.pack(fill="both", expand=True, padx=14, pady=14)
+        main.grid_columnconfigure(1, weight=1)
+        main.grid_rowconfigure(1, weight=1)
 
+        nav = self._frame(main)
+        nav.grid(row=0, column=0, sticky="w", pady=(0, 10))
+        self.section_buttons = {}
+        for text, section in (("Themes", "themes"), ("Background", "background"),
+                              ("Menu", "menu")):
+            b = self._button(nav, text, lambda value=section: self.show_section(value))
+            b.configure(padx=9, pady=3, takefocus=1)
+            b.pack(side="left", padx=(0, 4))
+            self.section_buttons[section] = b
+
+        # fixed-height box: a long status message never moves the rest of the layout
+        status_box = self._frame(main, height=34)
+        status_box.pack_propagate(False)
+        status_box.grid(row=0, column=1, sticky="ew", padx=(12, 0), pady=(0, 10))
+        self.status = tk.Label(status_box, text="", anchor="w", justify="left",
+                               font=("Sans", 9))
+        self.status.pack(fill="both", expand=True)
+        self.status.bind("<Configure>", self._on_status_resize)
+
+        left = self._frame(main, width=self.PANEL_W)
+        left.pack_propagate(False)
+        left.grid(row=1, column=0, sticky="ns")
+        self._build_themes_panel(left)
+        self._build_background_panel(left)
+        self.menu_panel = self._frame(left)
+        self._label(self.menu_panel, text="Menu management is not available yet.").pack(
+            fill="x", pady=(2, 0))
+        self.themes_panel.pack(fill="both", expand=True)
+
+        right = self._frame(main)
+        right.grid(row=1, column=1, sticky="nsew", padx=(12, 0))
+        self.canvas = tk.Canvas(right, highlightthickness=1, bd=0)
+        self.canvas.pack(fill="both", expand=True)
+        self.canvas.bind("<Configure>", lambda e: self.schedule_draw())
+
+    def _build_themes_panel(self, left):
+        self.themes_panel = self._frame(left)
+        btns = self._frame(self.themes_panel)
+        btns.pack(side="bottom", fill="x", pady=(14, 0))
+        for text, cmd in (("Apply", self.apply), ("Reset default", self.reset),
+                          ("Reload list", self.refresh)):
+            self._button(btns, text, cmd).pack(fill="x", pady=2)
+        self.listbox = tk.Listbox(self.themes_panel, relief="flat", bd=0, highlightthickness=1,
+                                  activestyle="none", width=10, font=("Sans", 10),
+                                  exportselection=False)
+        self.listbox.pack(fill="both", expand=True)
+        # No polling: every way of changing the selection is bound instead.
+        for seq in ("<<ListboxSelect>>", "<ButtonRelease-1>", "<KeyRelease-Up>",
+                    "<KeyRelease-Down>", "<KeyRelease-Prior>", "<KeyRelease-Next>",
+                    "<KeyRelease-Home>", "<KeyRelease-End>"):
+            self.listbox.bind(seq, lambda e: self._select_changed())
+        self.listbox.bind("<Double-Button-1>", lambda e: self.apply())
+
+    def _build_background_panel(self, left):
+        self.background_panel = self._frame(left)
+        panel = self.background_panel
+        self.bg_mode = tk.StringVar(value="solid")
+        self.bg_default = tk.BooleanVar(value=False)
+        self.bg_color1 = tk.StringVar(value="#2b2b2b")
+        self.bg_color2 = tk.StringVar(value="#387cb0")
+        self.bg_radios = []
+        for text, value in (("Solid color", "solid"), ("Gradient", "gradient")):
+            radio = tk.Radiobutton(panel, text=text, variable=self.bg_mode, value=value,
+                                   command=self._background_changed, anchor="w",
+                                   bd=0, highlightthickness=0, padx=2, pady=2)
+            radio.pack(fill="x")
+            self.bg_radios.append(radio)
+        self._label(panel, text="Color 1").pack(fill="x", pady=(8, 2))
+        self.bg_swatch1 = self._button(panel, "#2b2b2b", lambda: self.choose_bg_color(1))
+        self.bg_swatch1.pack(fill="x")
+        self._label(panel, text="Color 2 (gradient)").pack(fill="x", pady=(8, 2))
+        self.bg_swatch2 = self._button(panel, "#387cb0", lambda: self.choose_bg_color(2))
+        self.bg_swatch2.pack(fill="x")
+        self._button(panel, "Apply to Theme", self.save_background).pack(fill="x", pady=(14, 3))
+        self._button(panel, "Use JWM Default Background", self.reset_background).pack(
+            fill="x", pady=3)
+
+    # -- status line
+    def _on_status_resize(self, event):
+        wrap = max(100, event.width - 4)
+        if abs(wrap - self._status_wrap) > 2:       # the box has a fixed height: no layout loop
+            self._status_wrap = wrap
+            self.status.configure(wraplength=wrap)
+
+    def set_status(self, msg):
+        self.status.config(text=msg)
+
+    # -- logo scan: slow part of the work, kept out of the user interface
+    def _start_logo_scan(self):
+        worker = threading.Thread(target=scan_system_logo, daemon=True)
+        worker.start()
+
+        def check():
+            if worker.is_alive():
+                self.after(150, check)
+            else:
+                _LOGO_MEMO.clear()
+                self.draw(force=True)        # the logo may be available now
+        self.after(150, check)
+
+    # -- drawing is debounced: once the window stops resizing, not on every event
     def schedule_draw(self):
-        """Redraw once the window stops resizing (not on every resize event)."""
         if self._draw_job:
             self.after_cancel(self._draw_job)
         self._draw_job = self.after(60, self._draw_now)
@@ -666,26 +701,48 @@ class App(tk.Tk):
         traceback.print_exception(exc, val, tb)
         self.set_status("ERROR: %s: %s" % (exc.__name__, val))
 
-    def _poll(self):
-        """Check the selection even if the list event does not arrive."""
-        try:
-            sel = self.listbox.curselection()
-            if sel and self.listbox.get(sel[0]) != self.current:
-                self.on_select()
-        except Exception as e:
-            self.set_status("ERROR: %s" % e)
-        self.after(400, self._poll)
+    def _select_changed(self):
+        sel = self.listbox.curselection()
+        if sel and self.listbox.get(sel[0]) != self.current:
+            self.on_select()
 
-    # -- app colors, taken from the theme that is currently applied (~/.jwmrc)
+    # -- colors (fast path for #rrggbb, Tk only for color names; results are cached)
+    def _rgb(self, color):
+        """(r, g, b) in 0..255, or None if the color is not valid."""
+        v = self._rgb_cache.get(color, False)
+        if v is False:
+            m = _HEX6.match(color) if isinstance(color, str) else None
+            if m:
+                v = (int(m.group(1), 16), int(m.group(2), 16), int(m.group(3), 16))
+            else:
+                try:
+                    v = tuple(x // 256 for x in self.winfo_rgb(color))
+                except tk.TclError:
+                    v = None
+            self._rgb_cache[color] = v
+        return v
+
+    def _valid(self, color):
+        return self._rgb(color) is not None
+
     def _lum(self, color):
-        r, g, b = [v / 65535.0 for v in self.winfo_rgb(color)]
-        return 0.2126 * r + 0.7152 * g + 0.0722 * b
+        r, g, b = self._rgb(color)
+        return (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255.0
 
     def _mix(self, a, b, t):
-        ra, ga, ba = [v // 256 for v in self.winfo_rgb(a)]
-        rb, gb, bb = [v // 256 for v in self.winfo_rgb(b)]
+        ra, ga, ba = self._rgb(a)
+        rb, gb, bb = self._rgb(b)
         return "#%02x%02x%02x" % (int(ra + (rb - ra) * t), int(ga + (gb - ga) * t),
                                   int(ba + (bb - ba) * t))
+
+    def _shade(self, color, f):
+        """f>0 lightens (towards white), f<0 darkens (towards black)."""
+        r, g, b = self._rgb(color)
+        if f >= 0:
+            r, g, b = [int(v + (255 - v) * f) for v in (r, g, b)]
+        else:
+            r, g, b = [int(v * (1 + f)) for v in (r, g, b)]
+        return "#%02x%02x%02x" % (r, g, b)
 
     def _readable(self, fg, bg):
         """Keep text readable: if fg is too close to bg use white or black."""
@@ -700,6 +757,7 @@ class App(tk.Tk):
         - selected-theme bar      <- selected menu item (MenuStyle/Active)
         - buttons                 <- panel colors and look (TrayStyle); with
                                      decorations="motif" they are raised bevels
+        - selected section tab    <- the panel's active window button (TaskListStyle/Active)
         """
         d = DEFAULT_PALETTE
         colors, motif = {}, False
@@ -719,10 +777,13 @@ class App(tk.Tk):
         btn_fg = self._readable(pick("tray_fg", fg), btn_bg)
         act_bg = pick("tray_act_bg", sel_bg)
         act_fg = self._readable(pick("tray_act_fg", sel_fg), act_bg)
+        tab_bg = pick("task_act_bg", act_bg)
+        tab_fg = self._readable(pick("task_act_fg", act_fg), tab_bg)
         edge = self._shade(bg, 0.25 if self._lum(bg) < 0.5 else -0.25)
         return {"bg": bg, "fg": fg, "muted": self._mix(fg, bg, 0.45), "edge": edge,
                 "sel_bg": sel_bg, "sel_fg": sel_fg, "btn_bg": btn_bg, "btn_fg": btn_fg,
-                "act_bg": act_bg, "act_fg": act_fg, "motif": motif}
+                "act_bg": act_bg, "act_fg": act_fg, "tab_bg": tab_bg, "tab_fg": tab_fg,
+                "motif": motif}
 
     def _style_button(self, b):
         p = self.pal
@@ -734,11 +795,41 @@ class App(tk.Tk):
         b.configure(bg=p["btn_bg"], fg=p["btn_fg"],
                     activebackground=p["act_bg"], activeforeground=p["act_fg"])
 
+    def _style_background_radios(self):
+        """Use JWM's active-menu colors for the selected background option."""
+        p = self.pal
+        selected = self.bg_mode.get()
+        for radio in self.bg_radios:
+            active = radio.cget("value") == selected
+            bg = p["sel_bg"] if active else p["bg"]
+            fg = p["sel_fg"] if active else p["fg"]
+            radio.configure(bg=bg, fg=fg, selectcolor=p["sel_bg"],
+                            activebackground=bg, activeforeground=fg,
+                            disabledforeground=p["muted"], relief="flat", bd=0,
+                            highlightthickness=0)
+
+    def _style_section_buttons(self):
+        """Tabs look like the panel buttons; the selected one is pressed in, like the
+        active window button of the JWM panel."""
+        p = self.pal
+        for section, button in self.section_buttons.items():
+            if section == self.section:
+                button.configure(bg=p["tab_bg"], fg=p["tab_fg"],
+                                 activebackground=p["tab_bg"], activeforeground=p["tab_fg"])
+                if p["motif"]:
+                    button.configure(relief="sunken", bd=2, highlightthickness=0)
+                else:
+                    button.configure(relief="flat", bd=0, highlightthickness=1,
+                                     highlightbackground=p["tab_fg"],
+                                     highlightcolor=p["tab_fg"])
+            else:
+                self._style_button(button)
+
     def restyle(self):
         """Recolor the whole app from the currently applied theme (~/.jwmrc)."""
         theme = parse_theme_cached(TARGET) if os.path.isfile(TARGET) else None
         p = self._palette_from(theme)
-        if p == self.pal and self._frames and getattr(self, "_styled", False):
+        if self._styled and p == self.pal:
             return                       # same look: nothing to reconfigure
         self.pal = p
         self._styled = True
@@ -757,37 +848,7 @@ class App(tk.Tk):
             self._style_button(b)
         self._style_background_radios()
         self._style_section_buttons()
-
-    def _style_background_radios(self):
-        """Use JWM's active-menu colors for the selected background option."""
-        p = self.pal
-        selected = self.bg_mode.get() if hasattr(self, "bg_mode") else "solid"
-        for radio in getattr(self, "bg_radios", []):
-            active = radio.cget("value") == selected
-            bg = p["sel_bg"] if active else p["bg"]
-            fg = p["sel_fg"] if active else p["fg"]
-            radio.configure(bg=bg, fg=fg, selectcolor=p["sel_bg"],
-                            activebackground=p["sel_bg"] if active else p["bg"],
-                            activeforeground=p["sel_fg"] if active else p["fg"],
-                            disabledforeground=p["muted"], relief="flat", bd=0,
-                            highlightthickness=0)
-
-    def _style_section_buttons(self):
-        """Make section navigation match the currently applied JWM theme."""
-        if not hasattr(self, "section_buttons"):
-            return
-        p = self.pal
-        for section, button in self.section_buttons.items():
-            if section == getattr(self, "section", "themes"):
-                # JWM selected menu item: Active background/foreground.
-                button.configure(bg=p["sel_bg"], fg=p["sel_fg"],
-                                 activebackground=p["sel_bg"], activeforeground=p["sel_fg"])
-                if p["motif"]:
-                    button.configure(relief="sunken", bd=2, highlightthickness=0)
-                else:
-                    button.configure(relief="sunken", bd=1, highlightthickness=0)
-            else:
-                self._style_button(button)
+        self._update_bg_swatches()       # the swatches show their own colors
 
     # -- actions
     def refresh(self):
@@ -800,7 +861,7 @@ class App(tk.Tk):
             self.listbox.selection_set(0)
             self.on_select()
         else:
-            self.theme = None
+            self._set_theme(None)
             self.draw()
             self.set_status("No theme found in %s (needs <theme>/.jwmrc)" % THEMES_DIR)
 
@@ -815,7 +876,7 @@ class App(tk.Tk):
         if not name:
             return
         self.current = name
-        self.theme = parse_theme_cached(theme_path(name))
+        self._set_theme(parse_theme_cached(theme_path(name)))
         if self.theme["error"]:
             msg = "Error in file: " + self.theme["error"]
         else:
@@ -825,11 +886,9 @@ class App(tk.Tk):
             if self.theme["note"]:
                 msg += " - " + self.theme["note"]
         self.set_status(msg)
-        self.load_background_controls()
+        if self.section == "background":
+            self.load_background_controls()
         self.draw()
-
-    def set_status(self, msg):
-        self.status.config(text=msg)
 
     def apply_file(self, name):
         src = theme_path(name)
@@ -902,16 +961,7 @@ class App(tk.Tk):
         panel.pack(fill="both", expand=True)
         if section == "background":
             self.load_background_controls()
-            self._label_preview_mode("WALLPAPER")
-        else:
-            self._label_preview_mode("PREVIEW")
         self.draw()
-
-    def _label_preview_mode(self, value):
-        # The heading is the first label packed in the right-hand column.
-        # Store the preview heading explicitly when available.
-        if hasattr(self, "preview_heading"):
-            self.preview_heading.config(text=value)
 
     def load_background_controls(self):
         if not self.theme or self.theme.get("error"):
@@ -931,11 +981,8 @@ class App(tk.Tk):
         for button, var in ((self.bg_swatch1, self.bg_color1), (self.bg_swatch2, self.bg_color2)):
             color = var.get()
             button.config(text=color, bg=color, activebackground=color)
-            try:
-                r, g, b = self.winfo_rgb(color)
-                fg = "#000000" if (r + g + b) / 3 > 32767 else "#ffffff"
-            except tk.TclError:
-                fg = "#ffffff"
+            rgb = self._rgb(color)
+            fg = "#000000" if rgb and sum(rgb) / 3 > 127 else "#ffffff"
             button.config(fg=fg, activeforeground=fg)
 
     def choose_bg_color(self, which):
@@ -989,75 +1036,12 @@ class App(tk.Tk):
         try:
             with open(path, "r", encoding="utf-8") as f:
                 data = f.read()
-            bg_re = re.compile(r"<Background\b([^>]*)>(.*?)</Background>", re.S)
-            default_marker = re.compile(r"<!--\s*JWManager default background: (none|\s*<Background\b.*?</Background>)\s*-->", re.S)
-            has_default_marker = bool(default_marker.search(data))
-            desktop_blocks = list(re.finditer(r"<Desktops\b([^>]*)>(.*?)</Desktops>", data, re.S))
-            target = None
-            for block in desktop_blocks:
-                body = block.group(2)
-                for match in bg_re.finditer(body):
-                    absolute_start = block.start(2) + match.start()
-                    if data.rfind("<!--", 0, absolute_start) > data.rfind("-->", 0, absolute_start):
-                        continue
-                    target = (block, match)
-                    break
-                if target:
-                    break
-
-            if mode == "default":
-                # Restore the original theme background if we saved one; otherwise
-                # comment out the custom entry so JWM uses its own default.
-                if has_default_marker:
-                    if target:
-                        block, match = target
-                        old = match.group(0)
-                        abs_start = block.start(2) + match.start()
-                        abs_end = block.start(2) + match.end()
-                        data = data[:abs_start] + "<!-- JWManager custom background: " + old + " -->" + data[abs_end:]
-                    marker_match = default_marker.search(data)
-                    if marker_match and marker_match.group(1).strip() == "none":
-                        data = default_marker.sub("", data, count=1)
-                    else:
-                        data = default_marker.sub(lambda m: m.group(1), data, count=1)
-                elif target:
-                    block, match = target
-                    old = match.group(0)
-                    abs_start = block.start(2) + match.start()
-                    abs_end = block.start(2) + match.end()
-                    data = data[:abs_start] + "<!-- JWManager custom background: " + old + " -->" + data[abs_end:]
-            else:
-                value = c1 if mode == "solid" else c1 + ":" + c2
-                new = '<Background type="%s">%s</Background>' % (mode, value)
-                if target:
-                    block, match = target
-                    old = match.group(0)
-                    abs_start = block.start(2) + match.start()
-                    abs_end = block.start(2) + match.end()
-                    if has_default_marker:
-                        replacement = new
-                    else:
-                        # Preserve the theme's original background so Reset can restore it.
-                        replacement = "<!-- JWManager default background: " + old + " -->" + new
-                    data = data[:abs_start] + replacement + data[abs_end:]
-                else:
-                    # Insert into an existing Desktops section, expanding self-closing tags if needed.
-                    self_closing = re.search(r"<Desktops\b([^>]*)/>", data)
-                    if self_closing:
-                        replacement = "<Desktops%s><!-- JWManager default background: none -->%s</Desktops>" % (self_closing.group(1), new)
-                        data = data[:self_closing.start()] + replacement + data[self_closing.end():]
-                    else:
-                        opening = re.search(r"<Desktops\b[^>]*>", data)
-                        if opening:
-                            marker = "" if has_default_marker else "<!-- JWManager default background: none -->"
-                            data = data[:opening.end()] + marker + new + data[opening.end():]
-                        else:
-                            data += "\n<Desktops><!-- JWManager default background: none -->" + new + "</Desktops>\n"
+            new = rewrite_background(data, mode, c1, c2)
             shutil.copy2(path, path + ".bak")
             with open(path, "w", encoding="utf-8") as f:
-                f.write(data)
+                f.write(new)
             _PARSE_CACHE.pop(path, None)
-            self.theme = parse_theme(path)
+            self._set_theme(parse_theme(path))
             self.load_background_controls()
             self.draw()
             return True
@@ -1095,17 +1079,6 @@ class App(tk.Tk):
             self.draw()
 
     # -- preview
-    def _valid(self, color):
-        ok = self._valid_cache.get(color)
-        if ok is None:
-            try:
-                self.winfo_rgb(color)
-                ok = True
-            except tk.TclError:
-                ok = False
-            self._valid_cache[color] = ok
-        return ok
-
     def _families(self):
         if self._fam_cache is None:
             try:
@@ -1134,20 +1107,21 @@ class App(tk.Tk):
         return good[0], (good[1] if len(good) > 1 else None)
 
     def _fill(self, x1, y1, x2, y2, spec, vertical=False, outline=""):
-        """Solid rectangle or gradient between two colors."""
+        """Solid rectangle or gradient between two colors. A gradient only needs as
+        many bands as the colors have distinct steps, so it uses few canvas items."""
         c = self.canvas
         c1, c2 = spec
         if not c2:
             c.create_rectangle(x1, y1, x2, y2, fill=c1, outline=outline)
             return
-        r1, g1, b1 = [v // 256 for v in self.winfo_rgb(c1)]
-        r2, g2, b2 = [v // 256 for v in self.winfo_rgb(c2)]
+        a, b = self._rgb(c1), self._rgb(c2)
         length = (y2 - y1) if vertical else (x2 - x1)
-        steps = int(max(2, min(length, 64)))
+        delta = max(abs(a[0] - b[0]), abs(a[1] - b[1]), abs(a[2] - b[2]))
+        steps = int(max(2, min(length, delta + 1, 64)))
         for i in range(steps):
             f = i / (steps - 1)
-            col = "#%02x%02x%02x" % (int(r1 + (r2 - r1) * f), int(g1 + (g2 - g1) * f),
-                                     int(b1 + (b2 - b1) * f))
+            col = "#%02x%02x%02x" % (int(a[0] + (b[0] - a[0]) * f), int(a[1] + (b[1] - a[1]) * f),
+                                     int(a[2] + (b[2] - a[2]) * f))
             if vertical:
                 ya, yb = y1 + length * i / steps, y1 + length * (i + 1) / steps
                 c.create_rectangle(x1, ya, x2, yb + 1, fill=col, outline="")
@@ -1161,19 +1135,21 @@ class App(tk.Tk):
     def _clock_text(fmt):
         return "12:34 PM" if "%p" in fmt else "12:34"
 
-    def _shade(self, color, f):
-        """f>0 lightens (towards white), f<0 darkens (towards black)."""
-        r, g, b = [v // 256 for v in self.winfo_rgb(color)]
-        if f >= 0:
-            r, g, b = [int(v + (255 - v) * f) for v in (r, g, b)]
-        else:
-            r, g, b = [int(v * (1 + f)) for v in (r, g, b)]
-        return "#%02x%02x%02x" % (r, g, b)
+    def _edges(self, base):
+        """(light, dark) bevel edges of a color. Measured on a real JWM motif theme:
+        JWM multiplies each channel by about 1.447 (light) and 0.55 (dark)."""
+        e = self._edge_cache.get(base)
+        if e is None:
+            r, g, b = self._rgb(base)
+            e = (("#%02x%02x%02x" % tuple(min(255, int(v * 1.447)) for v in (r, g, b))),
+                 ("#%02x%02x%02x" % tuple(int(v * 0.55) for v in (r, g, b))))
+            self._edge_cache[base] = e
+        return e
 
     def _bevel(self, x1, y1, x2, y2, base, raised=True, width=1):
         """Raised or sunken bevel, Motif / Windows 98 style."""
         c = self.canvas
-        light, dark = self._shade(base, 0.35), self._shade(base, -0.5)
+        light, dark = self._edges(base)
         tl, br = (light, dark) if raised else (dark, light)
         for i in range(width):
             a, b, d, e = x1 + i, y1 + i, x2 - i - 1, y2 - i - 1
@@ -1199,16 +1175,22 @@ class App(tk.Tk):
                 from PIL import Image, ImageTk
                 im = Image.open(path).convert("RGBA")
                 try:
-                    resample = Image.Resampling.LANCZOS
+                    resample = Image.Resampling.BICUBIC
                 except AttributeError:
-                    resample = Image.LANCZOS
-                im.thumbnail((size, size), resample)
+                    resample = Image.BICUBIC
+                scale = size / float(max(im.width, im.height))   # JWM also enlarges small icons
+                im = im.resize((max(1, round(im.width * scale)), max(1, round(im.height * scale))),
+                               resample)
                 img = ImageTk.PhotoImage(im, master=self)
             except Exception:
                 try:  # without Pillow: Tk only reads png/gif/ppm
                     raw = tk.PhotoImage(file=path, master=self)
-                    f = max(1, -(-max(raw.width(), raw.height()) // size))
-                    img = raw.subsample(f) if f > 1 else raw
+                    big = max(raw.width(), raw.height())
+                    if big >= size:
+                        f = max(1, -(-big // size))
+                        img = raw.subsample(f) if f > 1 else raw
+                    else:
+                        img = raw.zoom(max(1, size // big))
                 except Exception:
                     img = None
         cache[key] = img
@@ -1216,10 +1198,8 @@ class App(tk.Tk):
 
     def _icon_font(self, tray_font):
         """Find an installed Nerd Font (preferring the tray one)."""
-        if tray_font in self._font_memo:
-            return self._font_memo[tray_font]
-        fams = self._families()
-        self._font_memo[tray_font] = self._find_icon_font(fams, tray_font)
+        if tray_font not in self._font_memo:
+            self._font_memo[tray_font] = self._find_icon_font(self._families(), tray_font)
         return self._font_memo[tray_font]
 
     @staticmethod
@@ -1235,14 +1215,32 @@ class App(tk.Tk):
                 return f
         return None
 
-    def draw(self):
+    def _set_theme(self, theme):
+        if theme is not self.theme:
+            self.theme = theme
+            self._theme_rev += 1         # tells draw() that the picture is out of date
+
+    def _bg_state(self):
+        return (self.bg_default.get(), self.bg_mode.get(),
+                self.bg_color1.get(), self.bg_color2.get())
+
+    def draw(self, force=False):
         c = self.canvas
+        w, h = c.winfo_width(), c.winfo_height()
+        if w < 300 or h < 200:
+            return
+        # Nothing to do if what the picture depends on has not changed.
+        key = (self._theme_rev, w, h, self.section,
+               self._bg_state() if self.section == "background" else None)
+        if key == self._drawn_key and not force:
+            return
+        self._drawn_key = key
         c.delete("all")
         raw = self.theme
         if not raw:
             return
-        w, h = c.winfo_width(), c.winfo_height()
-        if w < 300 or h < 200:
+        if self.section == "background":
+            self.draw_background_preview(w, h)
             return
         col = raw["colors"]
         memo = {}
@@ -1262,63 +1260,69 @@ class App(tk.Tk):
         ay2 = h if top_tray else h - tray_h
         H = ay2 - ay1
 
-        # desktop background (solid or vertical gradient)
-        if self.section == "background":
-            self.draw_background_preview(w, h)
-            return
-        self._fill(0, 0, w, h, S("desktop"), vertical=True)
+        self._fill(0, 0, w, h, S("desktop"), vertical=True)     # desktop background
 
         bw = raw["border"]
         th = raw["title_h"]
 
-        def window(x, y, ww, hh, active, label):
-            pre = "act" if active else "inact"
-            motif = raw["win_deco"] == "motif"
-            # flat: frame uses the Outline color; motif: frame uses the title color
-            frame = C(pre + "_title") if motif else C(pre + "_outline")
-            c.create_rectangle(x, y, x + ww, y + hh, fill=frame, outline="")
+        def glyphs(cx, cy, r, kind, color, thick):
+            """Window button symbols: close (X), maximize (square), minimize (dash)."""
+            if kind == "close":
+                c.create_line(cx - r, cy - r, cx + r + 1, cy + r + 1, fill=color, width=thick)
+                c.create_line(cx - r, cy + r, cx + r + 1, cy - r - 1, fill=color, width=thick)
+            elif kind == "max":
+                c.create_rectangle(cx - r, cy - r, cx + r, cy + r, outline=color, width=thick)
+            else:
+                c.create_line(cx - r, cy + r - 1, cx + r + 1, cy + r - 1, fill=color, width=2)
+
+        def motif_window(x, y, ww, hh, pre, label, bold):
+            """Motif frame, reproduced from a real JWM window (pixel measurements):
+            ring 0 = raised bevel, ring 1 = dark line, then the title bar made of four
+            raised cells (title + three square buttons) above the client area."""
+            base, txt = C(pre + "_title"), C(pre + "_text")
+            ring = 2
+            c.create_rectangle(x, y, x + ww, y + hh, fill=self._edges(base)[1], outline="")
+            self._bevel(x, y, x + ww, y + hh, base, True, 1)
+            tx1, ty1, tx2 = x + ring, y + ring, x + ww - ring
+            ty2 = ty1 + th
+            c.create_rectangle(tx1, ty2, tx2, y + hh - ring, fill="#1e1e1e", outline="")
+            self._fill(tx1, ty1, tx2, ty2, S(pre + "_title"))
+            cy = ty1 + th / 2
+            self._bevel(tx1, ty1, tx2 - 3 * th, ty2, base, True, 1)       # title cell
+            c.create_text(tx1 + 8, cy, text=label, anchor="w", fill=txt, font=F(9, bold))
+            r = max(4, int(th * 0.22))
+            for i, kind in enumerate(("close", "max", "min")):           # right to left
+                bx2 = tx2 - i * th
+                bx1 = bx2 - th
+                self._bevel(bx1, ty1, bx2, ty2, base, True, 1)           # raised button
+                glyphs((bx1 + bx2) / 2, cy, r, kind, txt, 2)
+            c.create_text(tx1 + 10, ty2 + 18, text="Window content", anchor="w",
+                          fill="#9a9a9a", font=F(9))
+
+        def flat_window(x, y, ww, hh, pre, label, bold):
+            """Flat frame: Outline color border, symbols without boxes."""
+            txt = C(pre + "_text")
+            c.create_rectangle(x, y, x + ww, y + hh, fill=C(pre + "_outline"), outline="")
             self._fill(x + bw, y + bw, x + ww - bw, y + bw + th, S(pre + "_title"))
             c.create_rectangle(x + bw, y + bw + th, x + ww - bw, y + hh - bw,
                                fill="#1e1e1e", outline="")
-            if motif:
-                base = C(pre + "_title")
-                self._bevel(x, y, x + ww, y + hh, base, True, 2 if bw >= 3 else 1)  # outer
-                self._bevel(x + bw - 1, y + bw + th, x + ww - bw + 1, y + hh - bw + 1,
-                            base, False, 1)                                  # inner area
-            txt = C(pre + "_text")
-            c.create_text(x + bw + 8, y + bw + th / 2, text=label, anchor="w",
-                          fill=txt, font=F(9, active))
-            # buttons at the top right: minimize, maximize, close
             cy = y + bw + th / 2
+            c.create_text(x + bw + 8, cy, text=label, anchor="w", fill=txt, font=F(9, bold))
             r = max(4, int(th * 0.22))
-            if motif:
-                # three square raised buttons, side by side
-                base = C(pre + "_title")
-                for i in range(3):                       # 0=close 1=maximize 2=minimize
-                    bx2 = x + ww - bw - i * th
-                    bx1 = bx2 - th
-                    c.create_rectangle(bx1, y + bw, bx2, y + bw + th, fill=base, outline="")
-                    self._bevel(bx1, y + bw, bx2, y + bw + th, base, True, 1)
-                    cx = (bx1 + bx2) / 2
-                    if i == 0:
-                        c.create_line(cx - r, cy - r, cx + r + 1, cy + r + 1, fill=txt, width=2)
-                        c.create_line(cx - r, cy + r, cx + r + 1, cy - r - 1, fill=txt, width=2)
-                    elif i == 1:
-                        c.create_rectangle(cx - r, cy - r, cx + r, cy + r, outline=txt, width=2)
-                    else:
-                        c.create_line(cx - r, cy + r - 1, cx + r + 1, cy + r - 1,
-                                      fill=txt, width=2)
-            else:
-                # flat style: only the symbols, no boxes
-                cx = x + ww - bw - 14                    # close (X)
-                c.create_line(cx - r, cy - r, cx + r + 1, cy + r + 1, fill=txt, width=1)
-                c.create_line(cx - r, cy + r, cx + r + 1, cy - r - 1, fill=txt, width=1)
-                cx -= 20                                 # maximize (square)
-                c.create_rectangle(cx - r, cy - r, cx + r, cy + r, outline=txt)
-                cx -= 20                                 # minimize (dash)
-                c.create_line(cx - r, cy + r - 1, cx + r + 1, cy + r - 1, fill=txt, width=2)
+            cx = x + ww - bw - 14
+            for kind in ("close", "max", "min"):                         # right to left
+                glyphs(cx, cy, r, kind, txt, 1)
+                cx -= 20
             c.create_text(x + bw + 10, y + bw + th + 18, text="Window content",
                           anchor="w", fill="#9a9a9a", font=F(9))
+
+        def window(x, y, ww, hh, active, label):
+            pre = "act" if active else "inact"
+            x, y, ww, hh = int(x), int(y), int(ww), int(hh)
+            if raw["win_deco"] == "motif":
+                motif_window(x, y, ww, hh, pre, label, active)
+            else:
+                flat_window(x, y, ww, hh, pre, label, active)
 
         window(w * 0.05, ay1 + H * 0.10, w * 0.46, H * 0.40, False, "Inactive window")
         window(w * 0.20, ay1 + H * 0.34, w * 0.50, H * 0.46, True, "Active window")
@@ -1346,7 +1350,8 @@ class App(tk.Tk):
         self._draw_tray(w, h, raw, S, C, F, col)
 
     def _draw_tray(self, w, h, raw, S, C, F, col):
-        # Shared tray renderer used by both Themes and Background previews
+        # Shared tray renderer used by both the Themes and the Background previews.
+        # Elements are drawn in the order of the theme's <Tray> section.
         c = self.canvas
         tray_h = raw["tray_h"]
         top_tray = raw["tray_pos"] == "top"
@@ -1367,7 +1372,7 @@ class App(tk.Tk):
             if tmotif:
                 self._bevel(x1, y1_, x2, y2_, spec[0], not pressed, 1)
 
-        logo = self._logo_image(raw["icon_paths"], tray_h - 2)
+        logo = self._logo_image(raw["icon_paths"], tray_h - 3)
         icon_fam = self._icon_font(raw["tray_font"])
         is_pua = lambda ch: 0xE000 <= ord(ch) <= 0xF8FF or ord(ch) >= 0xF0000
 
@@ -1377,7 +1382,7 @@ class App(tk.Tk):
                 return "\u2022"                  # Nerd Font symbol not available
             return lab
 
-        ndesk, cell = 3, int(tray_h * 1.6)
+        ndesk, cell = 3, int(tray_h * 1.64)
 
         def width_of(it):
             kind = it["type"]
@@ -1393,14 +1398,18 @@ class App(tk.Tk):
                 return 14 + 7 * len(self._clock_text(it["format"]))
             if kind == "button":
                 if it["action"].startswith("root:"):
-                    return int(tray_h * 1.6)
+                    return int(tray_h * 1.64)
                 lab = label_of(it["label"])
-                return max(tray_h, 12 + 7 * len(lab)) if lab else tray_h
+                if not lab:
+                    return tray_h
+                if any(is_pua(ch) for ch in it["label"]):
+                    return max(tray_h, 12 + 7 * len(lab))     # symbol buttons
+                return 6 + 7 * len(lab)                       # plain text, e.g. "_" is 13 px
             return 0                              # tasklist: takes the remaining space
 
         items = raw["tray_items"]
-        flex = max(90, w - 4 - sum(width_of(i) for i in items))
-        x = 2
+        flex = max(90, w - sum(width_of(i) for i in items))
+        x = 0
         for it in items:
             kind = it["type"]
             wd = flex if kind == "tasklist" else width_of(it)
@@ -1426,33 +1435,32 @@ class App(tk.Tk):
                                            outline=C("tray_fg"))
             elif kind == "pager":
                 for i in range(ndesk):
-                    x0, act = x + i * cell, i == 0
-                    self._fill(x0, y1, x0 + cell, y2, S("pager_act_bg") if act else S("pager_bg"))
-                    if act:  # window thumbnails on the active desktop
-                        c.create_rectangle(x0 + 11, y1 + 6, x0 + cell - 7, y2 - 4,
-                                           fill=C("pager_fg"), outline=C("pager_outline"))
-                        c.create_rectangle(x0 + 5, y1 + 4, x0 + 21, y1 + 13,
-                                           fill=C("pager_act_fg"), outline=C("pager_text"))
+                    x0, act = x + i * cell, i == 1       # like the real tray: 2nd desktop active
+                    left = x0 + 1 if (tmotif and i) else x0
+                    self._fill(left, y1, x0 + cell, y2, S("pager_act_bg") if act else S("pager_bg"))
+                    if act:  # thumbnail of the active window on the active desktop
+                        c.create_rectangle(x0 + 4, y1 + 6, x0 + 26, y2 - 4,
+                                           fill=C("pager_act_fg"), outline=C("pager_outline"))
                     elif it.get("labeled"):
                         c.create_text(x0 + cell / 2, mid, text=str(i + 1),
                                       fill=C("pager_text"), font=F(8))
-                    if tmotif:   # separator between desktops (no bevel)
-                        sep = self._shade(C("tray_bg"), -0.5)
-                        c.create_line(x0 + cell - 1, y1, x0 + cell - 1, y2, fill=sep)
-                        c.create_line(x0 + cell, y1, x0 + cell, y2,
-                                      fill=self._shade(C("tray_bg"), 0.2))
+                    if tmotif:   # thin line between desktops, in the pager outline color
+                        if i:
+                            c.create_line(x0, y1, x0, y2, fill=C("pager_outline"))
                     else:
                         c.create_rectangle(x0, y1, x0 + cell, y2, outline=C("pager_outline"))
             elif kind == "tasklist":
                 kinds = (("Active window", "task_act_", True), ("Window", "task_", False),
                          ("Minimized", "task_min_", True))
                 n = max(1, min(len(kinds), int(wd // 90)))
-                iw = max(50, min(it["maxwidth"], int(wd // n) - 2))
+                iw = max(50, min(it["maxwidth"], int(wd // n)))
                 for j, (label, pre, pressed) in enumerate(kinds[:n]):
-                    ix = x + j * (iw + 2)
+                    ix = x + j * iw                  # items are side by side, no gap
                     tbtn(ix, y1, ix + iw, y2, S(pre + "bg"), pressed=pressed)
                     c.create_rectangle(ix + 5, mid - 5, ix + 15, mid + 5, outline=C(pre + "fg"))
-                    c.create_text(ix + 21, mid, text=label, anchor="w", fill=C(pre + "fg"),
+                    room = max(1, (iw - 26) // 6)           # keep the text inside its item
+                    shown = label if len(label) <= room else label[:max(1, room - 1)] + "\u2026"
+                    c.create_text(ix + 21, mid, text=shown, anchor="w", fill=C(pre + "fg"),
                                   font=F(8))
             elif kind == "swallow":
                 sz = min(it["w"], 40, tray_h - 2)
@@ -1463,14 +1471,14 @@ class App(tk.Tk):
                               outline="#d8d8d8")
                 c.create_line(sx + sz / 2, mid, sx + sz - 6, mid - 2, fill="#2a6f73", width=2)
             elif kind == "dock":
-                # JWM populates the Dock at runtime; keep its space empty in the preview.
-                pass
+                pass     # JWM fills the Dock at runtime; its space stays empty in the preview
             elif kind == "clock":
                 if "clock_bg" in col:
                     self._fill(x, y1, x + wd, y2, S("clock_bg"))
                 c.create_text(x + wd / 2, mid, text=self._clock_text(it["format"]),
                               fill=C("clock_fg"), font=F(9))
             x += wd
+
 
 if __name__ == "__main__":
     App().mainloop()

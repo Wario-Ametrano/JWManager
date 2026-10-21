@@ -1,0 +1,139 @@
+<?xml version="1.0"?>
+<JWM>
+    <!-- RIPSTER THEME -->
+
+    <!-- WALLPAPER -->
+     <Desktops> <Background type="solid">#005a70</Background></Desktops>
+
+    <!-- STARTUP E MODALITÀ SAGOMA -->
+    <StartupCommand>nm-applet</StartupCommand>
+    <StartupCommand>xset s off -dpms s noblank</StartupCommand>
+    <StartupCommand>numlockx on</StartupCommand>
+    <StartupCommand>lxqt-policykit-agent &amp;</StartupCommand>
+
+    <MoveMode>outline</MoveMode>
+    <ResizeMode>outline</ResizeMode>
+
+    <!-- MENU  -->
+    <RootMenu onroot="12">
+        <Include>.jwm/jwm-menu</Include>
+        <Separator/>
+        <Program label="Xkill" icon="vcs-conflicting"  confirm="true">xkill</Program>
+        <Restart label="JWM Restart" icon="vcs-update-required"/>
+        <Menu label="Exit" icon="sportstracker">
+            <Program label="PowerOff" icon="boot" confirm="true">/usr/libexec/jwm/jwm-poweroff.sh</Program>
+            <Program label="Reboot" icon="xfsm-reboot"  confirm="true">/usr/libexec/jwm/jwm-reboot.sh</Program>
+            <Exit label="Log Out" icon="computer-log-out"  confirm="true" />
+        </Menu>
+
+    </RootMenu>
+    <!-- STILE DEL MENU  -->
+    <MenuStyle>
+        <Font>Sans-11</Font>
+        <ItemHeight>36</ItemHeight>
+        <Foreground>#ffffff</Foreground>
+        <Background>#383c4a</Background>
+        <Outline>#1e1e1e</Outline>
+        <Active>
+            <Foreground>#ffffff</Foreground>
+            <Background>#0099ba</Background>
+        </Active>
+        <!-- Opzionale: aggiunge un bordo per separare visivamente il menu -->
+        <Opacity>1.0</Opacity>
+    </MenuStyle>
+
+    <!-- TRAY (BARRA DELLE APPLICAZIONI) -->
+    <Tray x="0" y="-1" height="28">
+        <TrayButton icon="/usr/share/jwm/jwm-pink.png">root:1</TrayButton>
+        <Spacer width="1"/>
+        <TrayButton label="_" popup="Show Desktop">showdesktop</TrayButton>
+        <Spacer width="1"/>
+        <Pager labeled="true"/>
+        <Spacer width="1"/>
+        <TaskList maxwidth="200" list="current"/>
+        <TrayButton icon="xfe" popup="Xfe File Manager">exec:xfe</TrayButton>
+        <TrayButton icon="min" popup="Min-Browser">exec:min </TrayButton>
+        <TrayButton icon="xterm" popup="Terminal Emulator">exec:xterm</TrayButton >
+        <!-- Wi-Fi -->
+        <Dock/>
+
+        <Clock popup="%d/%m/%y %H:%M" format="%H:%M">xclock</Clock>
+        <Spacer width="2"/>
+
+    </Tray>
+    <!-- STILE PANNELLO -->
+    <TrayStyle>
+         <Width>1</Width>
+        <Background>#383c4a</Background>
+        <Outline>#1e1e1e</Outline>
+        <Active>
+            <Background>#0099ba</Background>
+            <Foreground>#ffffff</Foreground>
+        </Active>
+    </TrayStyle>
+
+    <!-- DESKTOP MULTIPLI -->
+    <Desktops width="3" height="1"><!-- JWManager custom background: <Background type="solid">#000000</Background> -->
+        <Desktop name="1"/>
+        <Desktop name="2"/>
+        <Desktop name="3"/>
+    </Desktops>
+
+    <PagerStyle>
+        <Font>Sans-10</Font>
+        <Foreground>#383c4a</Foreground> <!-- numeri -->
+        <Background>#404552</Background> <!-- desktop inattivi -->
+        <Outline>#1e1e1e</Outline> <!-- divisore -->
+        <Active>
+            <Foreground>#404552</Foreground> <!-- numero desktop attivo -->
+            <Background>#0099ba</Background> <!-- colore desktop attivo -->
+            <Outline>#1e1e1e</Outline> <!-- bordo desktop attivo -->
+        </Active>
+    </PagerStyle>
+
+
+    <!-- STILE TASKLIST (Configurazione globale) -->
+    <TaskListStyle group="false">
+        <Font>Sans-10</Font>
+        <Background>#383c4a</Background>
+        <Foreground>#eceff4</Foreground>
+        <Active>
+            <Background>#0099ba</Background>
+            <Foreground>#ffffff</Foreground>
+        </Active>
+    </TaskListStyle>
+
+    <!-- STILE FINESTRE (Aggiornato per evitare errori) -->
+    <WindowStyle>
+        <Font>Sans-9</Font>
+        <Width>1</Width>
+        <Height>22</Height>
+        <Corner>0</Corner>
+        <Foreground>#888888</Foreground>
+        <Background>#2f343f</Background>
+        <Outline>#1e1e1e</Outline>
+        <Active>
+            <Foreground>#FFFFFF</Foreground>
+            <Background>#2f343f</Background>
+            <Outline>#1e1e1e</Outline>
+        </Active>
+    </WindowStyle>
+
+    <!-- DIMENSIONE DEFAULT APP-->
+    <Group> <Name>xfe</Name> <Width>800</Width> <Height>500</Height> <X>100</X> <Y>50</Y> <Maximized>false</Maximized> </Group>
+    <Group> <Name>falkon</Name> <Maximized>true</Maximized> </Group>
+
+    <!-- SHOTCUT MENU-->
+    <Key key="Super_L">root:1</Key>
+    <Key mask="C" key="t">exec:xterm</Key>
+    <Key mask="A" key="x">exec:xfe</Key>
+
+    <!-- FOCUS E ICONE -->
+    <FocusModel>click</FocusModel>
+    <IconPath>/usr/share/icons/Papirus-Dark/64x64/apps</IconPath>
+    <IconPath>/usr/share/icons/Papirus-Dark/64x64/categories</IconPath>
+    <IconPath>/usr/share/icons/Papirus-Dark/64x64/places</IconPath>
+    <IconPath>/usr/share/icons/Papirus-Dark/48x48/emblems</IconPath>
+    <IconPath>/usr/share/pixmaps</IconPath>
+
+</JWM>

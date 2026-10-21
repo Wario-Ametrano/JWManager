@@ -1,0 +1,173 @@
+<?xml version="1.0"?>
+<JWM>
+    <!--  TEMA WINDOWS 95 STYLE-->
+    <!-- ========================= -->
+    <!--          STARTUP          -->
+    <!-- ========================= -->
+
+    <StartupCommand>xsetroot -solid "#007c7f"</StartupCommand> <!-- sfondo Win98 -->
+    <StartupCommand>nm-applet</StartupCommand>
+
+    <!-- ========================= -->
+    <!--            MENU           -->
+    <!-- ========================= -->
+
+    <MenuStyle>
+        <Font>Sans-10</Font>
+        <Background>#C0C0C0</Background>
+        <Foreground>#000000</Foreground>
+        <Outline>#FFFFFF</Outline>
+        <Active>
+            <Background>#000080</Background>
+            <Foreground>#FFFFFF</Foreground>
+            <Outline>#000000</Outline>
+        </Active>
+    </MenuStyle>
+
+    <RootMenu onroot="12">
+        <Include>.jwm/jwm-menu</Include>
+        <Separator/>
+        <Program icon="utilities-terminal" label="Terminal">x-terminal-emulator</Program>
+        <Separator/>
+        <Restart label="Restart" icon="reload"/>
+        <Menu label="Exit" icon="org.gnome.OfficeRunner">
+            <Program label="Power Off" confirm="true">/usr/libexec/jwm/jwm-poweroff.sh</Program>
+            <Program label="Reboot" confirm="true">reboot</Program>
+            <Exit label="Log Out" confirm="true" />
+        </Menu>
+    </RootMenu>
+
+    <!-- ========================= -->
+    <!--         WINDOW STYLE      -->
+    <!-- ========================= -->
+
+    <WindowStyle>
+        <Font>Sans-10</Font>
+        <Width>4</Width>
+        <Corner>0</Corner>
+        <Active>
+            <Title>#000080</Title>
+            <Outline>#000000</Outline>
+            <Foreground>#FFFFFF</Foreground>
+            <Background>#000080</Background>
+            <Button>#C0C0C0</Button>
+        </Active>
+
+        <Inactive>
+            <Title>#8080C0</Title>
+            <Outline>#808080</Outline>
+            <Foreground>#000000</Foreground>
+            <Background>#C0C0C0</Background>
+            <Button>#C0C0C0</Button>
+        </Inactive>
+    </WindowStyle>
+
+    <!-- ========================= -->
+    <!--        BUTTON STYLE       -->
+    <!-- ========================= -->
+
+    <ButtonStyle>
+        <Font>Sans-10</Font>
+        <Foreground>#000000</Foreground>
+        <Background>#C0C0C0</Background>
+        <Outline>#FFFFFF</Outline>
+        <Active>
+            <Background>#808080</Background>
+            <Outline>#000000</Outline>
+        </Active>
+    </ButtonStyle>
+
+    <!-- ========================= -->
+    <!--         TRAY STYLE        -->
+    <!-- ========================= -->
+
+    <TrayStyle>
+        <Font>Sans-10</Font>
+        <Background>#C0C0C0</Background>
+        <Foreground>#000000</Foreground>
+        <Outline>#FFFFFF</Outline>
+    </TrayStyle>
+
+    <!-- ========================= -->
+    <!--       TASKLIST STYLE      -->
+    <!-- ========================= -->
+
+    <TaskListStyle>
+        <Font>Sans-10</Font>
+        <Background>#C0C0C0</Background>
+        <Foreground>#000000</Foreground>
+
+        <Active>
+            <Background>#000080</Background>
+            <Foreground>#FFFFFF</Foreground>
+        </Active>
+    </TaskListStyle>
+
+    <!-- ========================= -->
+    <!--        PAGER STYLE        -->
+    <!-- ========================= -->
+
+    <PagerStyle>
+        <Font>Sans-10</Font>
+        <Background>#C0C0C0</Background>
+        <Foreground>#000000</Foreground>
+        <Outline>#FFFFFF</Outline>
+        <Active>
+            <Background>#000080</Background>
+            <Foreground>#FFFFFF</Foreground>
+            <Outline>#000000</Outline>
+        </Active>
+    </PagerStyle>
+
+    <!-- ========================= -->
+    <!--         DESKTOPS          -->
+    <!-- ========================= -->
+
+    <Desktops width="3" height="1"><!-- JWManager custom background: <Background type="solid">#000000</Background> -->
+        <Desktop name="1"/>
+        <Desktop name="2"/>
+        <Desktop name="3"/>
+    </Desktops>
+
+    <!-- ========================= -->
+    <!--            TRAY           -->
+    <!-- ========================= -->
+
+    <Tray x="0" y="-1" height="30" autohide="off">
+
+        <TrayButton label="Start">root:1</TrayButton>
+        <Spacer width="6"/>
+
+        <Pager labeled="true"/>
+        <Spacer width="6"/>
+
+        <TaskList maxwidth="150"/>
+        <Spacer width="6"/>
+
+        <TrayButton icon="xfe">exec:xfe</TrayButton>
+        <Spacer width="6"/>
+
+        <TrayButton icon="network-wireless">exec:nm-tray</TrayButton>
+        <Spacer width="6"/>
+
+        <Clock format="%H:%M">xclock</Clock>
+
+    </Tray>
+
+    <!-- ========================= -->
+    <!--         KEY BINDINGS      -->
+    <!-- ========================= -->
+
+    <Key key="Super_L">root:1</Key>
+    <Key key="Super_R">root:1</Key>
+
+    <FocusModel>click</FocusModel>
+
+    <!-- ========================= -->
+    <!--         ICON PATHS        -->
+    <!-- ========================= -->
+
+    <IconPath>/usr/share/icons</IconPath>
+    <IconPath>/usr/share/pixmaps</IconPath>
+
+</JWM>

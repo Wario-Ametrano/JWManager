@@ -1,0 +1,161 @@
+<?xml version="1.0"?>
+<JWM>
+    <!--  CLASSIC THEME->
+    <!-- ========================= -->
+    <!--          STARTUP          -->
+    <!-- ========================= -->
+
+     <Desktops> <Background type="solid">#007c7f</Background></Desktops>
+
+    <!-- ========================= -->
+    <!--            MENU           -->
+    <!-- ========================= -->
+
+    <MenuStyle decorations="motif">
+        <Font>Sans-10</Font>
+        <Background>#C0C0C0</Background>
+        <Foreground>#000000</Foreground>
+        <Active>
+            <Background>#000080</Background>
+            <Foreground>#FFFFFF</Foreground>
+            <Outline>#000000</Outline>
+        </Active>
+    </MenuStyle>
+
+    <RootMenu onroot="12">
+        <Include>.jwm/jwm-menu</Include>
+        <Separator/>
+        <Program icon="utilities-terminal" label="Terminal">x-terminal-emulator</Program>
+        <Separator/>
+        <Restart label="Restart" icon="reload"/>
+        <Menu label="Exit" icon="org.gnome.OfficeRunner">
+            <Program label="Power Off" confirm="true">/usr/libexec/jwm/jwm-poweroff.sh</Program>
+            <Program label="Reboot" confirm="true">reboot</Program>
+            <Exit label="Log Out" confirm="true" />
+        </Menu>
+    </RootMenu>
+
+    <!-- ========================= -->
+    <!--         WINDOW STYLE      -->
+    <!-- ========================= -->
+
+    <WindowStyle decorations="motif">
+        <Font>Sans-10</Font>
+        <Width>3</Width>
+        <Corner>0</Corner>
+        <Active>
+            <Title>#000080</Title>
+            <Foreground>#FFFFFF</Foreground>
+            <Background>#000080</Background>
+            <Button>#C0C0C0</Button>
+        </Active>
+        <Inactive>
+            <Title>#8080C0</Title>
+            <Foreground>#000000</Foreground>
+            <Background>#C0C0C0</Background>
+            <Button>#C0C0C0</Button>
+        </Inactive>
+    </WindowStyle>
+
+    <!-- ========================= -->
+    <!--        BUTTON STYLE       -->
+    <!-- ========================= -->
+
+    <ButtonStyle decorations="motif">
+        <Font>Sans-10</Font>
+        <Foreground>#000000</Foreground>
+        <Background>#C0C0C0</Background>
+        <Active>
+            <Background>#c0c0c0</Background>
+        </Active>
+    </ButtonStyle>
+
+    <!-- ========================= -->
+    <!--         TRAY STYLE        -->
+    <!-- ========================= -->
+
+    <TrayStyle decorations="motif">
+        <Font>Sans-10</Font>
+        <Background>#C0C0C0</Background>
+        <Foreground>#000000</Foreground>
+    </TrayStyle>
+
+    <!-- ========================= -->
+    <!--            TRAY           -->
+    <!-- ========================= -->
+
+    <Tray x="0" y="-1" height="25" autohide="off">
+        <TrayButton icon="/usr/share/jwm/jwm-red.svg">root:1</TrayButton>
+     	<Spacer width="2"/>
+        <TrayButton label="_">showdesktop</TrayButton>
+        <Spacer width="2"/>
+        <Pager labeled="true"/>
+        <TaskList maxwidth="258"/>
+        <TrayButton icon="xfe">exec:xfe</TrayButton>
+        <Dock/>
+        <Clock format="%a - %H:%M">xclock</Clock>
+    </Tray>
+
+    <!-- ========================= -->
+    <!--       TASKLIST STYLE      -->
+    <!-- ========================= -->
+
+    <TaskListStyle group="false">
+        <Font>Sans-10</Font>
+        <Background>#C0C0C0</Background>
+        <Foreground>#000000</Foreground>
+        <Active>
+            <Background>#909090</Background>
+            <Foreground>#000000</Foreground>
+        </Active>
+  		<Minimized>
+        	<Foreground>#000000</Foreground>
+       		<Background>#C0C0C0</Background>
+      </Minimized>
+      <Foreground>#000000</Foreground> 
+      <Background>#C0C0C0</Background>
+    </TaskListStyle>
+
+    <!-- ========================= -->
+    <!--        PAGER STYLE        -->
+    <!-- ========================= -->
+
+    <PagerStyle decorations="motif">
+        <Foreground>#C0C0C0</Foreground> <!-- miniatura finestra desktop inattivo -->
+        <Background>#C0C0C0</Background> <!-- desktop inattivi -->
+        <Outline>#000000</Outline> <!-- divisore -->
+        <Text>#000000</Text>
+        <Active>
+            <Foreground>#FFFFFF</Foreground> <!-- miniatura finestra desktop attivo -->
+            <Background>#909090</Background> <!-- colore desktop attivo -->
+        </Active>
+    </PagerStyle>
+
+    <!-- ========================= -->
+    <!--         DESKTOPS          -->
+    <!-- ========================= -->
+
+    <Desktops width="3" height="1"><!-- JWManager custom background: <Background type="solid">#000000</Background> -->
+        <Desktop name="1"/>
+        <Desktop name="2"/>
+        <Desktop name="3"/>
+    </Desktops>
+
+
+    <!-- ========================= -->
+    <!--         KEY BINDINGS      -->
+    <!-- ========================= -->
+
+    <Key key="Super_L">root:1</Key>
+    <Key key="Super_R">root:1</Key>
+
+    <FocusModel>click</FocusModel>
+
+    <!-- ========================= -->
+    <!--         ICON PATHS        -->
+    <!-- ========================= -->
+
+    <IconPath>/usr/share/icons</IconPath>
+    <IconPath>/usr/share/pixmaps</IconPath>
+
+</JWM>

@@ -16,7 +16,7 @@
 
     <!-- MENU  -->
     <RootMenu onroot="12">
-        <Include>.jwm/debian-menu</Include>
+        <Include>.jwm/jwm-menu</Include>
         <Separator/>
         <Program label="Xkill" icon="vcs-conflicting"  confirm="true">xkill</Program>
         <Restart label="JWM Restart" icon="vcs-update-required"/>
@@ -73,7 +73,7 @@
     </TrayStyle>
 
     <!-- DESKTOP MULTIPLI -->
-    <Desktops width="3" height="1">
+    <Desktops width="3" height="1"><!-- JWManager default background: none --><Background type="solid">#000000</Background>
         <Desktop name="1"/>
         <Desktop name="2"/>
         <Desktop name="3"/>

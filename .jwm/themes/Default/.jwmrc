@@ -1,0 +1,214 @@
+<?xml version="1.0"?>
+<JWM>
+
+<!-- WALLPAPER -->
+    <Desktops> <!-- JWManager default background: <Background type="gradient">#041b39:#387cb0</Background> --><Background type="gradient">#041b39:#387cb0</Background> </Desktops>
+
+       <!-- ========================= -->
+    <!--            MENU           -->
+    <!-- ========================= -->
+
+ <MenuStyle decorations="motif">
+        <Font>Sans-12</Font>
+        <Foreground>#FFFFFF</Foreground>
+        <Background>#333333</Background>
+        <Active>
+            <Foreground>#FFFFFF</Foreground>
+            <Background>#0077CC</Background>
+        </Active>
+        <Opacity>0.85</Opacity>
+    </MenuStyle>
+
+    <RootMenu onroot="12">
+        <Include>.jwm/jwm-menu</Include>
+    </RootMenu>
+
+   <!-- ========================= -->
+    <!--         WINDOW STYLE      -->
+    <!-- ========================= -->
+
+    <WindowStyle decorations="motif">
+        <Font>Sans-12:bold</Font>
+        <Width>2</Width>
+        <Height>22</Height>
+        <Corner>0</Corner>
+        <Foreground>#FFFFFF</Foreground>
+        <Background>#555555</Background>
+        <Opacity>0.5</Opacity>
+        <Active>
+            <Foreground>#FFFFFF</Foreground>
+            <Background>#0077CC</Background>
+            <Opacity>1.0</Opacity>
+        </Active>
+    </WindowStyle>
+
+    <!-- ========================= -->
+    <!--        BUTTON STYLE       -->
+    <!-- ========================= -->
+
+    <ButtonStyle decorations="motif">
+        <Font>Sans-10</Font>
+        <Foreground>#ffffff</Foreground>
+        <Background>#333333</Background>
+        <Active>
+            <Background>#333333</Background>
+        </Active>
+    </ButtonStyle>
+
+ <!-- ========================= -->
+    <!--         TRAY STYLE        -->
+    <!-- ========================= -->
+
+    <TrayStyle decorations="motif">
+        <Font>Sans-12</Font>
+        <Background>#333333</Background>
+        <Foreground>#FFFFFF</Foreground>
+        <Opacity>1.00</Opacity>
+    </TrayStyle>
+
+<!-- ========================= -->
+    <!--            TRAY           -->
+    <!-- ========================= -->
+
+    <Tray x="0" y="-1" height="25" autohide="off" delay="1000">
+        <TrayButton icon="/usr/share/jwm/jwm-red.svg">root:1</TrayButton>
+        <Spacer width="2"/>
+        <TrayButton label="_">showdesktop</TrayButton>
+        <Spacer width="2"/>
+        <Pager labeled="true"/>
+        <TaskList maxwidth="258"/>
+        <TrayButton icon="terminal">exec:xterm</TrayButton>
+        <Spacer width="2"/>
+        <TrayButton icon="folder">exec:xfe</TrayButton>
+        <Dock />
+        <Clock format="%a %H:%M">xclock</Clock>
+    </Tray>
+
+    <!-- ========================= -->
+    <!--       TASKLIST STYLE      -->
+    <!-- ========================= -->
+
+    <TaskListStyle group="false">
+      <Font>Sans-12</Font>
+      <Active>
+        <Foreground>#FFFFFF</Foreground>
+        <Background>#555555</Background>
+      </Active>
+      <Minimized>
+        <Foreground>#FFFFFF</Foreground>
+        <Background>#333333</Background>
+      </Minimized>
+      <Foreground>#FFFFFF</Foreground> 
+      <Background>#333333</Background>
+    </TaskListStyle>
+
+<!-- ========================= -->
+    <!--        PAGER STYLE        -->
+    <!-- ========================= -->
+
+    <PagerStyle decorations="motif">
+        <Foreground>#555555</Foreground>
+        <Background>#333333</Background>
+        <Text>#FFFFFF</Text>
+        <Active>
+            <Foreground>#0077CC</Foreground>
+            <Background>#004488</Background>
+        </Active>
+    </PagerStyle>
+   
+    <PopupStyle>
+        <Font>Sans-12</Font>
+        <Foreground>#000000</Foreground>
+        <Background>#999999</Background>
+    </PopupStyle>
+
+    <!-- ========================= -->
+    <!--         DESKTOPS          -->
+    <!-- ========================= -->
+
+    <!-- Virtual Desktops -->
+    <!-- Desktop tags can be contained within Desktops for desktop names. -->
+    <Desktops width="3" height="1"></Desktops>
+
+    <!-- Double click speed (in milliseconds) -->
+    <DoubleClickSpeed>400</DoubleClickSpeed>
+
+    <!-- Double click delta (in pixels) -->
+    <DoubleClickDelta>2</DoubleClickDelta>
+
+    <!-- The focus model (sloppy or click) -->
+    <FocusModel>click</FocusModel>
+
+    <!-- The snap mode (none, screen, or border) -->
+    <SnapMode distance="10">border</SnapMode>
+
+    <!-- The move mode (outline or opaque) -->
+    <MoveMode>outline</MoveMode>
+
+    <!-- The resize mode (outline or opaque) -->
+    <ResizeMode>outline</ResizeMode>
+
+    <!-- ========================= -->
+    <!--         ICON PATHS        -->
+    <!-- ========================= -->
+
+    <IconPath>.jwm/icons</IconPath>
+
+
+    <!-- Key bindings -->
+    <Key key="Up">up</Key>
+    <Key key="Down">down</Key>
+    <Key key="Right">right</Key>
+    <Key key="Left">left</Key>
+    <Key key="h">left</Key>
+    <Key key="j">down</Key>
+    <Key key="k">up</Key>
+    <Key key="l">right</Key>
+    <Key key="Return">select</Key>
+    <Key key="Escape">escape</Key>
+
+    <Key mask="A" key="Tab">nextstacked</Key>
+    <Key mask="A" key="F4">close</Key>
+    <Key mask="A" key="#">desktop#</Key>
+    <Key mask="A" key="F1">root:1</Key>
+    <Key mask="A" key="F2">window</Key>
+    <Key mask="A" key="F10">maximize</Key>
+    <Key mask="A" key="Right">rdesktop</Key>
+    <Key mask="A" key="Left">ldesktop</Key>
+    <Key mask="A" key="Up">udesktop</Key>
+    <Key mask="A" key="Down">ddesktop</Key>
+
+    <!-- Mouse bindings -->
+    <Mouse context="root" button="4">ldesktop</Mouse>
+    <Mouse context="root" button="5">rdesktop</Mouse>
+
+    <Mouse context="title" button="1">move</Mouse>
+    <Mouse context="title" button="2">move</Mouse>
+    <Mouse context="title" button="3">window</Mouse>
+    <Mouse context="title" button="4">shade</Mouse>
+    <Mouse context="title" button="5">shade</Mouse>
+    <Mouse context="title" button="11">maximize</Mouse>
+
+    <Mouse context="icon" button="1">window</Mouse>
+    <Mouse context="icon" button="2">move</Mouse>
+    <Mouse context="icon" button="3">window</Mouse>
+    <Mouse context="icon" button="4">shade</Mouse>
+    <Mouse context="icon" button="5">shade</Mouse>
+
+    <Mouse context="border" button="1">resize</Mouse>
+    <Mouse context="border" button="2">move</Mouse>
+    <Mouse context="border" button="3">window</Mouse>
+
+    <Mouse context="close" button="-1">close</Mouse>
+    <Mouse context="close" button="2">move</Mouse>
+    <Mouse context="close" button="-3">close</Mouse>
+
+    <Mouse context="maximize" button="-1">maximize</Mouse>
+    <Mouse context="maximize" button="-2">maxv</Mouse>
+    <Mouse context="maximize" button="-3">maxh</Mouse>
+
+    <Mouse context="minimize" button="-1">minimize</Mouse>
+    <Mouse context="minimize" button="2">move</Mouse>
+    <Mouse context="minimize" button="-3">shade</Mouse>
+
+</JWM>
