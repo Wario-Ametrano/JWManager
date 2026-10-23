@@ -1,8 +1,21 @@
 <?xml version="1.0"?>
 <JWM>
 
+    <!-- JWM DEFAULT THEME -->
+
+    <!-- ========================= -->
+    <!--            StartupCommand           -->
+    <!-- ========================= -->
+    <StartupCommand>xset s off -dpms s noblank</StartupCommand>
+    <StartupCommand>numlockx on</StartupCommand>
+    <StartupCommand>lxqt-policykit-agent &amp;</StartupCommand>
+
+    <StartupCommand>xset s off</StartupCommand>
+    <StartupCommand>xset -dpms</StartupCommand>
+    <StartupCommand>xset s noblank</StartupCommand>
+
 <!-- WALLPAPER -->
-    <Desktops> <!-- JWManager default background: <Background type="gradient">#041b39:#387cb0</Background> --><Background type="gradient">#041b39:#387cb0</Background> </Desktops>
+    <Desktops> <Background type="gradient">#041b39:#387cb0</Background> </Desktops>
 
        <!-- ========================= -->
     <!--            MENU           -->
@@ -79,7 +92,7 @@
         <TaskList maxwidth="258"/>
         <TrayButton icon="terminal">exec:xterm</TrayButton>
         <Spacer width="2"/>
-        <TrayButton icon="folder">exec:xfe</TrayButton>
+        <TrayButton icon="file-manager">exec:xfe</TrayButton>
         <Dock />
         <Clock format="%a %H:%M">xclock</Clock>
     </Tray>
@@ -154,61 +167,9 @@
 
     <IconPath>.jwm/icons</IconPath>
 
-
-    <!-- Key bindings -->
-    <Key key="Up">up</Key>
-    <Key key="Down">down</Key>
-    <Key key="Right">right</Key>
-    <Key key="Left">left</Key>
-    <Key key="h">left</Key>
-    <Key key="j">down</Key>
-    <Key key="k">up</Key>
-    <Key key="l">right</Key>
-    <Key key="Return">select</Key>
-    <Key key="Escape">escape</Key>
-
-    <Key mask="A" key="Tab">nextstacked</Key>
-    <Key mask="A" key="F4">close</Key>
-    <Key mask="A" key="#">desktop#</Key>
-    <Key mask="A" key="F1">root:1</Key>
-    <Key mask="A" key="F2">window</Key>
-    <Key mask="A" key="F10">maximize</Key>
-    <Key mask="A" key="Right">rdesktop</Key>
-    <Key mask="A" key="Left">ldesktop</Key>
-    <Key mask="A" key="Up">udesktop</Key>
-    <Key mask="A" key="Down">ddesktop</Key>
-
-    <!-- Mouse bindings -->
-    <Mouse context="root" button="4">ldesktop</Mouse>
-    <Mouse context="root" button="5">rdesktop</Mouse>
-
-    <Mouse context="title" button="1">move</Mouse>
-    <Mouse context="title" button="2">move</Mouse>
-    <Mouse context="title" button="3">window</Mouse>
-    <Mouse context="title" button="4">shade</Mouse>
-    <Mouse context="title" button="5">shade</Mouse>
-    <Mouse context="title" button="11">maximize</Mouse>
-
-    <Mouse context="icon" button="1">window</Mouse>
-    <Mouse context="icon" button="2">move</Mouse>
-    <Mouse context="icon" button="3">window</Mouse>
-    <Mouse context="icon" button="4">shade</Mouse>
-    <Mouse context="icon" button="5">shade</Mouse>
-
-    <Mouse context="border" button="1">resize</Mouse>
-    <Mouse context="border" button="2">move</Mouse>
-    <Mouse context="border" button="3">window</Mouse>
-
-    <Mouse context="close" button="-1">close</Mouse>
-    <Mouse context="close" button="2">move</Mouse>
-    <Mouse context="close" button="-3">close</Mouse>
-
-    <Mouse context="maximize" button="-1">maximize</Mouse>
-    <Mouse context="maximize" button="-2">maxv</Mouse>
-    <Mouse context="maximize" button="-3">maxh</Mouse>
-
-    <Mouse context="minimize" button="-1">minimize</Mouse>
-    <Mouse context="minimize" button="2">move</Mouse>
-    <Mouse context="minimize" button="-3">shade</Mouse>
+    <!-- SHOTCUT MENU-->
+    <Key key="Super_L">root:1</Key>
+    <Key mask="C" key="t">exec:xterm</Key>
+    <Key mask="A" key="x">exec:xfe</Key>
 
 </JWM>

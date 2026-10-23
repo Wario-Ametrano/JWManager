@@ -10,18 +10,22 @@ follow the theme that is currently applied.
 The window icon is the file ~/.jwm/jwmanager.png. If that file does not exist
 the window simply has no icon.
 """
+import base64
+import colorsys
 import filecmp
 import glob
+import io
 import json
 import os
 import re
+import shlex
 import shutil
 import subprocess
 import threading
 import traceback
 import tkinter as tk
 import tkinter.font as tkfont
-from tkinter import colorchooser
+from tkinter import filedialog
 import xml.etree.ElementTree as ET
 
 APP_NAME = "JWManager"      # window title and WM class
@@ -35,6 +39,14 @@ DEFAULT_NAME = "Default"
 SYSTEM_RC = "/etc/jwm/system.jwmrc"
 ICON_FILE = os.path.join(JWM_DIR, "jwmanager.png")            # the only icon used
 CACHE_FILE = os.path.join(JWM_DIR, "jwmanager-cache.json")    # remembers the logo path
+
+# Wallpapers: JWM draws no images itself, so an external script sets them (feh and friends).
+WALLPAPER_SCRIPT = os.path.join(JWM_DIR, "jwmanager-wallpaper.sh")
+WALLPAPER_MODES = (("tiled", "Set Tiled"), ("scaled", "Set Scaled"),
+                   ("centered", "Set Centered"), ("filled", "Set Filled"))
+IMAGE_EXT = (".png", ".jpg", ".jpeg")
+
+BEVEL = 2     # width of the raised / sunken bevels of the app's own buttons and fields
 
 # Symbol (Nerd Font) shown on the panel menu button of the preview.
 # To change it, put the code of your symbol here, e.g. "\uf17b8" or "\ue795".
@@ -162,11 +174,24 @@ FALLBACK = {
 }
 
 
+def parse_wallpaper_command(text):
+    """'sh /x/jwmanager-wallpaper.sh MODE FILE' -> (MODE, FILE), or None."""
+    try:
+        parts = shlex.split(text)
+    except ValueError:
+        return None
+    script = os.path.basename(WALLPAPER_SCRIPT)
+    for i, part in enumerate(parts):
+        if os.path.basename(part) == script and len(parts) > i + 2:
+            return parts[i + 1], parts[i + 2]
+    return None
+
+
 def parse_theme(path):
     """Extract the main colors and measures from a .jwmrc (JWM 2.3 and 2.4 formats)."""
     t = {"tray_pos": "bottom", "tray_h": 28, "title_h": 22, "border": 1,
          "font": "", "tray_font": "", "icon_paths": [], "note": "",
-         "win_deco": "flat", "tray_deco": "flat", "menu_deco": "flat",
+         "win_deco": "flat", "tray_deco": "flat", "menu_deco": "flat", "wallpaper": None,
          "tray_items": TRAY_DEFAULT, "error": None, "found": 0, "colors": {},
          "desktop_defined": False}
     try:
@@ -220,6 +245,14 @@ def parse_theme(path):
                 t[key] = "motif" if deco == "motif" else "flat"
                 break
 
+    for root in roots:                           # wallpaper set through our script?
+        for el in root.iter("StartupCommand"):
+            wallpaper = parse_wallpaper_command(el.text or "")
+            if wallpaper:
+                t["wallpaper"] = wallpaper
+                break
+        if t["wallpaper"]:
+            break
     t["tray_items"] = parse_tray(roots)
     t["title_h"] = number(["WindowStyle/Height"], 16, 36, 22)
     t["border"] = number(["WindowStyle/Width"], 1, 6, 1)
@@ -482,9 +515,18 @@ def rewrite_background(data, mode, c1=None, c2=None):
 
     mode "solid" / "gradient": set the color(s). The theme's original background is
     kept inside a comment so that mode "default" can restore it later.
+    mode "image": no <Background> at all (an external script paints the wallpaper).
     mode "default": go back to the original background (or none)."""
     found = _find_active_background(data)
     has_marker = bool(_DEFAULT_BG_MARK.search(data))
+    if mode == "image":
+        # JWM must not paint over the wallpaper: take the <Background> out, but keep it
+        # in the "default" comment so that "Use JWM Default Background" can bring it back.
+        if found:
+            s, e, old = found
+            repl = "" if has_marker else "<!-- JWManager default background: " + old + " -->"
+            data = data[:s] + repl + data[e:]
+        return data
     if mode == "default":
         if has_marker:
             if found:
@@ -520,31 +562,410 @@ def rewrite_background(data, mode, c1=None, c2=None):
     return data + block if end < 0 else data[:end] + block + data[end:]
 
 
-# -------------------------------------------------------------------- GUI
+# ------------------------------------------------------------ wallpaper (image) support
+_WP_BLOCK = re.compile(
+    r"[ \t]*<!-- JWManager wallpaper begin -->.*?<!-- JWManager wallpaper end -->[ \t]*\n?", re.S)
+
+
+def wallpaper_command(mode, file):
+    return "sh %s %s %s" % (shlex.quote(WALLPAPER_SCRIPT), mode, shlex.quote(file))
+
+
+def rewrite_wallpaper(data, mode=None, file=None):
+    """Remove the wallpaper commands JWManager put in a theme and, if mode and file are given,
+    add new ones: the script runs when JWM starts and every time JWM restarts."""
+    data = _WP_BLOCK.sub("", data)
+    if not mode:
+        return data
+    cmd = wallpaper_command(mode, file).replace("&", "&amp;").replace("<", "&lt;") \
+                                       .replace(">", "&gt;")
+    block = ("  <!-- JWManager wallpaper begin -->\n"
+             "  <StartupCommand>%s</StartupCommand>\n"
+             "  <RestartCommand>%s</RestartCommand>\n"
+             "  <!-- JWManager wallpaper end -->\n") % (cmd, cmd)
+    end = data.rfind("</JWM>")
+    return data + "\n" + block if end < 0 else data[:end] + block + data[end:]
+
+
+_PIL = {}
+
+
+def pil_modules():
+    """Pillow is optional: it is only needed to preview wallpapers."""
+    if not _PIL:
+        try:
+            from PIL import Image
+            _PIL["Image"] = Image
+        except Exception:
+            _PIL["Image"] = None
+        try:
+            from PIL import ImageTk
+            _PIL["ImageTk"] = ImageTk
+        except Exception:
+            _PIL["ImageTk"] = None
+    return _PIL
+
+
+def render_wallpaper(path, mode, w, h, screen_w, screen_h):
+    """PIL image (w x h) of the wallpaper as feh paints it. The preview shows the screen
+    scaled down by w / screen_w, so tiled and centered images keep their real proportions."""
+    Image = pil_modules()["Image"]
+    im = Image.open(path).convert("RGB")
+    f = w / float(max(1, screen_w))
+
+    def resized(width, height):
+        size = (max(4, int(width)), max(4, int(height)))
+        k = int(min(im.width / float(size[0]), im.height / float(size[1])))
+        src = im.reduce(k) if k >= 2 else im          # fast pre-shrink for big pictures
+        return src.resize(size, Image.BILINEAR)
+
+    if mode == "scaled":                              # stretched to the whole screen
+        return resized(w, h)
+    if mode == "filled":                              # keeps proportions, fills, crops the rest
+        k = max(w / float(im.width), h / float(im.height))
+        big = resized(im.width * k, im.height * k)
+        left, top = (big.width - w) // 2, (big.height - h) // 2
+        return big.crop((left, top, left + w, top + h))
+    out = Image.new("RGB", (w, h), (0, 0, 0))
+    small = resized(im.width * f, im.height * f)
+    if mode == "centered":
+        out.paste(small, ((w - small.width) // 2, (h - small.height) // 2))
+    else:                                             # tiled
+        for y in range(0, h, small.height):
+            for x in range(0, w, small.width):
+                out.paste(small, (x, y))
+    return out
+
+
+# -------------------------------------------------------------------- custom widgets
+# The app draws its own buttons, radio buttons, fields and sliders so that they look like the
+# JWM panel of the applied theme: only two states (normal and pressed), no hover effect, and the
+# text never moves.
 _HEX6 = re.compile(r"^#([0-9a-fA-F]{2})([0-9a-fA-F]{2})([0-9a-fA-F]{2})$")
 
 
+class Bevel(tk.Frame):
+    """A frame with a raised or sunken bevel made of thin lines. Put the content in .inner."""
+
+    def __init__(self, master, app, sunken=True, **kw):
+        super().__init__(master, bd=0, highlightthickness=0, **kw)
+        self.app, self.sunken = app, sunken
+        self.inner_color = None                  # None = the panel background
+        self._lines = [tk.Frame(self, bd=0, highlightthickness=0) for _ in range(4)]
+        self.inner = tk.Frame(self, bd=0, highlightthickness=0)
+        self._bw = 0
+        app._custom.append(self)
+        self.restyle()
+
+    def restyle(self):
+        p = self.app.pal
+        bw = BEVEL if p["motif"] else 1
+        if p["motif"]:
+            light, dark = self.app._edges(p["bg"])
+            tl, br = (dark, light) if self.sunken else (light, dark)
+        else:
+            tl = br = p["edge"]
+        top, left, bottom, right = self._lines
+        top.configure(bg=tl)
+        left.configure(bg=tl)
+        bottom.configure(bg=br)
+        right.configure(bg=br)
+        self.inner.configure(bg=self.inner_color or p["bg"])
+        if bw != self._bw:                       # (re)place the four lines and the content
+            self._bw = bw
+            top.place(x=0, y=0, relwidth=1, height=bw)
+            left.place(x=0, y=0, relheight=1, width=bw)
+            bottom.place(x=0, rely=1, y=-bw, relwidth=1, height=bw)
+            right.place(relx=1, x=-bw, y=0, relheight=1, width=bw)
+            self.inner.place(x=bw, y=bw, relwidth=1, relheight=1, width=-2 * bw, height=-2 * bw)
+
+    def set_inner_color(self, color):
+        self.inner_color = color
+        self.inner.configure(bg=color)
+
+
+class ThemeButton(tk.Canvas):
+    """Button with the look of a JWM panel button: raised, or pressed (sunken). No hover state."""
+
+    def __init__(self, master, app, text, command, height=30):
+        super().__init__(master, width=app.ui_font.measure(text) + 20, height=height,
+                         bd=0, highlightthickness=0, cursor="hand2")
+        self.app, self.text, self.on_click = app, text, command
+        self.selected = False                    # a selected tab stays pressed in
+        self._down = False
+        app._custom.append(self)
+        self.bind("<Configure>", lambda e: self.redraw())
+        self.bind("<ButtonPress-1>", self._press)
+        self.bind("<ButtonRelease-1>", self._release)
+        self.bind("<Leave>", self._leave)
+
+    def set_text(self, text):
+        self.text = text
+        self.redraw()
+
+    def set_selected(self, value):
+        if value != self.selected:
+            self.selected = value
+            self.redraw()
+
+    def _press(self, event):
+        self._down = True
+        self.redraw()
+
+    def _release(self, event):
+        was_down, self._down = self._down, False
+        self.redraw()
+        if was_down and 0 <= event.x < self.winfo_width() and 0 <= event.y < self.winfo_height():
+            self.on_click()
+
+    def _leave(self, event):
+        if self._down:                           # moved away while pressed: cancel
+            self._down = False
+            self.redraw()
+
+    def restyle(self):
+        self.redraw()
+
+    def redraw(self):
+        w, h = self.winfo_width(), self.winfo_height()
+        if w < 4 or h < 4:
+            return
+        app, p = self.app, self.app.pal
+        if self.selected:                        # like the active window button of the panel
+            bg, fg, sunk = p["tab_bg"], p["tab_fg"], True
+        elif self._down:
+            bg, fg, sunk = p["act_bg"], p["act_fg"], True
+        else:
+            bg, fg, sunk = p["btn_bg"], p["btn_fg"], False
+        self.delete("all")
+        self.create_rectangle(0, 0, w, h, fill=bg, outline="")
+        if p["motif"]:
+            app._bevel(0, 0, w, h, bg, not sunk, BEVEL, canvas=self)
+        else:
+            self.create_rectangle(0, 0, w - 1, h - 1,
+                                  outline=p["tab_fg"] if self.selected else p["edge"])
+        self.create_text(w // 2, h // 2, text=self.text, fill=fg, font=app.ui_font)
+
+
+class ThemeRadio(tk.Canvas):
+    """Radio button: round indicator and text, bound to a StringVar."""
+
+    def __init__(self, master, app, text, variable, value, command):
+        super().__init__(master, width=10, height=22, bd=0, highlightthickness=0, cursor="hand2")
+        self.app, self.text, self.variable, self.value, self.on_click = (
+            app, text, variable, value, command)
+        app._custom.append(self)
+        variable.trace_add("write", lambda *a: self.redraw())
+        self.bind("<Configure>", lambda e: self.redraw())
+        self.bind("<ButtonRelease-1>", self._click)
+
+    def _click(self, event):
+        self.variable.set(self.value)
+        self.on_click()
+
+    def restyle(self):
+        self.redraw()
+
+    def redraw(self):
+        w, h = self.winfo_width(), self.winfo_height()
+        if w < 4:
+            return
+        p = self.app.pal
+        self.delete("all")
+        self.create_rectangle(0, 0, w, h, fill=p["bg"], outline="")
+        cy = h // 2
+        self.create_oval(1, cy - 5, 12, cy + 5, fill=p["btn_bg"], outline=p["muted"])
+        if self.variable.get() == self.value:
+            self.create_oval(4, cy - 2, 9, cy + 3, fill=p["fg"], outline=p["fg"])
+        self.create_text(22, cy, text=self.text, anchor="w", fill=p["fg"], font=self.app.ui_font)
+
+
+class Bar(tk.Canvas):
+    """Horizontal slider drawn as a color gradient, with a triangle marker below it."""
+    BAR_H, HEIGHT, STEP = 8, 19, 4
+
+    def __init__(self, master, app, on_change):
+        super().__init__(master, width=10, height=self.HEIGHT, bd=0, highlightthickness=0,
+                         cursor="hand2")
+        self.app, self.on_change = app, on_change
+        self.value = 0.0
+        self.color_at = lambda frac: "#808080"   # gradient: fraction -> color
+        self._rects, self._bar_w, self._marker = [], 0, None
+        app._custom.append(self)
+        self.bind("<Configure>", self._on_resize)
+        self.bind("<Button-1>", self._drag)
+        self.bind("<B1-Motion>", self._drag)
+
+    def _on_resize(self, event):
+        if event.width != self._bar_w:
+            self._bar_w = event.width
+            self._build()
+
+    def _build(self):
+        self.delete("all")
+        w = self._bar_w
+        n = max(2, w // self.STEP + 1)
+        self._rects = [self.create_rectangle(i * self.STEP, 0, (i + 1) * self.STEP + 1,
+                                             self.BAR_H, outline="", fill="#808080")
+                       for i in range(n)]
+        self._marker = self.create_polygon(0, 0, 0, 0, 0, 0, outline="")
+        self.recolor()
+        self._place_marker()
+
+    def recolor(self):
+        n = len(self._rects)
+        for i, rid in enumerate(self._rects):
+            self.itemconfigure(rid, fill=self.color_at((i + 0.5) / n))
+
+    def set_value(self, value):
+        self.value = min(1.0, max(0.0, value))
+        self._place_marker()
+
+    def _place_marker(self):
+        if self._marker is None or self._bar_w < 4:
+            return
+        p = self.app.pal
+        x = self.value * (self._bar_w - 1)
+        self.coords(self._marker, x, self.BAR_H + 2, x - 4, self.HEIGHT - 1, x + 4, self.HEIGHT - 1)
+        self.itemconfigure(self._marker, fill=p["fg"], outline=p["bg"])
+
+    def _drag(self, event):
+        if self._bar_w > 1:
+            self.set_value(event.x / float(self._bar_w - 1))
+            self.on_change(self.value)
+
+    def restyle(self):
+        self.configure(bg=self.app.pal["bg"])
+        self._place_marker()
+
+
+class ColorPicker(tk.Frame):
+    """Hex field + color swatch + three sliders (lightness, hue, saturation).
+    The color is kept as HSL, so dragging one slider never changes the others."""
+
+    def __init__(self, master, app, label, variable, on_change):
+        super().__init__(master, bd=0, highlightthickness=0)
+        self.app, self.var, self.on_change = app, variable, on_change
+        self.h, self.l, self.s = 0.6, 0.5, 0.5
+        app._frames.append(self)
+        row = app._frame(self)
+        row.pack(fill="x")
+        box = app._frame(row, width=51, height=28)
+        box.pack_propagate(False)
+        box.pack(side="left")
+        self.label = app._label(box, text=label)
+        self.label.pack(fill="both", expand=True)
+        field = Bevel(row, app, width=79, height=28)
+        field.pack_propagate(False)
+        field.pack(side="left")
+        self.entry = tk.Entry(field.inner, relief="flat", bd=0, highlightthickness=0,
+                              font=app.ui_font, width=8)
+        self.entry.pack(fill="both", expand=True, padx=6)
+        self.entry.bind("<Return>", lambda e: self._commit())
+        self.entry.bind("<FocusOut>", lambda e: self._commit())
+        self.entry.bind("<KeyRelease>", self._typing)
+        self.swatch = Bevel(row, app, height=28)
+        self.swatch.pack(side="left", fill="x", expand=True, padx=(7, 0))
+        app._entries.append(self.entry)
+
+        self.bar_l = Bar(self, app, lambda v: self._bar("l", v))
+        self.bar_h = Bar(self, app, lambda v: self._bar("h", v))
+        self.bar_s = Bar(self, app, lambda v: self._bar("s", v))
+        self.bar_l.color_at = lambda f: "#%02x%02x%02x" % ((round(f * 255),) * 3)   # black -> white
+        self.bar_h.color_at = lambda f: self._hex(f, 0.5, 1.0)                    # spectrum
+        self.bar_l.pack(fill="x", pady=(14, 0))
+        self.bar_h.pack(fill="x")
+        self.bar_s.pack(fill="x")
+        app._custom.append(self)
+        self.set(variable.get())
+
+    # color model
+    @staticmethod
+    def _hex(h, l, s):
+        r, g, b = colorsys.hls_to_rgb(h, l, s)
+        return "#%02x%02x%02x" % (round(r * 255), round(g * 255), round(b * 255))
+
+    def set_label(self, text):
+        self.label.configure(text=text)
+
+    def set(self, color, notify=False):
+        """Set the color from a #rrggbb string (invalid values are ignored)."""
+        rgb = self.app._rgb(color)
+        if not rgb or not _HEX6.match(color):
+            return False
+        h, l, s = colorsys.rgb_to_hls(*[v / 255.0 for v in rgb])
+        if s > 0 and 0 < l < 1:
+            self.h = h                           # grays have no hue: keep the previous one
+        self.l, self.s = l, s
+        self._sync(notify)
+        return True
+
+    def _bar(self, kind, value):
+        setattr(self, kind, value)
+        if kind == "h" and self.s < 0.05 and 0.04 < self.l < 0.96:
+            self.s = 0.6                         # a gray has no hue: give it some color
+        self._sync(True)
+
+    def _sync(self, notify):
+        color = self._hex(self.h, self.l, self.s)
+        self.var.set(color)
+        if self.entry.get() != color:
+            self.entry.delete(0, "end")
+            self.entry.insert(0, color)
+        self.swatch.set_inner_color(color)
+        self.bar_l.set_value(self.l)
+        self.bar_h.set_value(self.h)
+        self.bar_s.set_value(self.s)
+        self.bar_s.color_at = lambda f: self._hex(self.h, self.l, f)
+        self.bar_s.recolor()
+        if notify:
+            self.on_change()
+
+    def _typing(self, event):
+        text = self.entry.get().strip()
+        if len(text) == 7 and _HEX6.match(text) and text.lower() != self.var.get().lower():
+            self.set(text, notify=True)
+
+    def _commit(self):
+        text = self.entry.get().strip()
+        if text.lower() == self.var.get().lower():
+            return                               # nothing changed (e.g. the field just lost focus)
+        if not self.set(text, notify=True):
+            self._sync(False)                    # invalid text: show the real color again
+
+    def restyle(self):
+        p = self.app.pal
+        self.configure(bg=p["bg"])
+        self.entry.configure(bg=p["bg"], fg=p["fg"], insertbackground=p["fg"],
+                             selectbackground=p["sel_bg"], selectforeground=p["sel_fg"])
+
+
+# -------------------------------------------------------------------- GUI
 class App(tk.Tk):
-    PANEL_W = 238         # width of the left column (list + buttons)
+    PANEL_W = 239            # width of the left column (all its elements are as wide as this)
 
     def __init__(self):
         super().__init__(className=APP_NAME)
         self.title(APP_NAME)
         self.iconname(APP_NAME)
-        self.geometry("762x472")
-        self.minsize(660, 420)
+        self.geometry("764x487")
+        self.minsize(720, 487)
         self.pal = dict(DEFAULT_PALETTE)
-        self._frames, self._labels, self._buttons = [], [], []
+        self.ui_font = tkfont.Font(family="Sans", size=10)
+        self._frames, self._labels, self._entries, self._custom = [], [], [], []
         self._rgb_cache, self._edge_cache = {}, {}
         self._fam_cache, self._font_memo = None, {}
-        self._draw_job, self._drawn_key = None, None
+        self._draw_job, self._drawn_key, self._status_job = None, None, None
         self._status_wrap = 0
         self._theme_rev = 0
         self._busy = False
         self._styled = False
+        self._wp_images, self._wp_photos, self._wp_pending = {}, {}, set()
         self.theme = None
         self.current = None
         self.section = "themes"
+        self.wp_mode = "tiled"
+        self.wp_file = None
 
         self._load_window_icon()
         ensure_setup()
@@ -565,43 +986,40 @@ class App(tk.Tk):
 
     # -- small widget factories (so restyle() can recolor everything later)
     def _frame(self, parent, **kw):
-        f = tk.Frame(parent, **kw)
+        f = tk.Frame(parent, bd=0, highlightthickness=0, **kw)
         self._frames.append(f)
         return f
 
     def _label(self, parent, **kw):
-        lab = tk.Label(parent, anchor="w", **kw)
+        lab = tk.Label(parent, anchor="w", font=self.ui_font, **kw)
         self._labels.append(lab)
         return lab
 
-    def _button(self, parent, text, cmd):
-        b = tk.Button(parent, text=text, command=cmd, padx=8, pady=6, cursor="hand2")
-        self._buttons.append(b)
-        return b
-
-    # -- layout (see the mockup): tabs + status on top, list/buttons left, preview right
+    # -- layout (see the mockups): tabs + status on top, left column, preview on the right.
+    # Every element of the left column is exactly PANEL_W wide, so all edges line up.
     def _build_ui(self):
         main = self._frame(self)
-        main.pack(fill="both", expand=True, padx=14, pady=14)
+        main.pack(fill="both", expand=True, padx=(17, 15), pady=(19, 14))
         main.grid_columnconfigure(1, weight=1)
         main.grid_rowconfigure(1, weight=1)
 
-        nav = self._frame(main)
-        nav.grid(row=0, column=0, sticky="w", pady=(0, 10))
+        nav = self._frame(main, width=self.PANEL_W, height=30)
+        nav.grid_propagate(False)
+        nav.grid(row=0, column=0, sticky="w", pady=(0, 12))
         self.section_buttons = {}
-        for text, section in (("Themes", "themes"), ("Background", "background"),
-                              ("Menu", "menu")):
-            b = self._button(nav, text, lambda value=section: self.show_section(value))
-            b.configure(padx=9, pady=3, takefocus=1)
-            b.pack(side="left", padx=(0, 4))
+        for i, (text, section) in enumerate((("Themes", "themes"), ("Background", "background"),
+                                             ("Menu", "menu"))):
+            b = ThemeButton(nav, self, text, lambda value=section: self.show_section(value))
+            b.grid(row=0, column=i, sticky="nsew", padx=(0 if i == 0 else 4, 0))
+            nav.grid_columnconfigure(i, weight=1)
+            nav.grid_rowconfigure(0, weight=1)
             self.section_buttons[section] = b
 
         # fixed-height box: a long status message never moves the rest of the layout
-        status_box = self._frame(main, height=34)
+        status_box = self._frame(main, height=30)
         status_box.pack_propagate(False)
-        status_box.grid(row=0, column=1, sticky="ew", padx=(12, 0), pady=(0, 10))
-        self.status = tk.Label(status_box, text="", anchor="w", justify="left",
-                               font=("Sans", 9))
+        status_box.grid(row=0, column=1, sticky="ew", padx=(16, 0), pady=(0, 12))
+        self.status = tk.Label(status_box, text="", anchor="w", justify="left", font=("Sans", 9))
         self.status.pack(fill="both", expand=True)
         self.status.bind("<Configure>", self._on_status_resize)
 
@@ -612,11 +1030,11 @@ class App(tk.Tk):
         self._build_background_panel(left)
         self.menu_panel = self._frame(left)
         self._label(self.menu_panel, text="Menu management is not available yet.").pack(
-            fill="x", pady=(2, 0))
+            fill="x", pady=(10, 0))
         self.themes_panel.pack(fill="both", expand=True)
 
         right = self._frame(main)
-        right.grid(row=1, column=1, sticky="nsew", padx=(12, 0))
+        right.grid(row=1, column=1, sticky="nsew", padx=(16, 0))
         self.canvas = tk.Canvas(right, highlightthickness=1, bd=0)
         self.canvas.pack(fill="both", expand=True)
         self.canvas.bind("<Configure>", lambda e: self.schedule_draw())
@@ -625,12 +1043,13 @@ class App(tk.Tk):
         self.themes_panel = self._frame(left)
         btns = self._frame(self.themes_panel)
         btns.pack(side="bottom", fill="x", pady=(14, 0))
-        for text, cmd in (("Apply", self.apply), ("Reset default", self.reset),
-                          ("Reload list", self.refresh)):
-            self._button(btns, text, cmd).pack(fill="x", pady=2)
-        self.listbox = tk.Listbox(self.themes_panel, relief="flat", bd=0, highlightthickness=1,
-                                  activestyle="none", width=10, font=("Sans", 10),
-                                  exportselection=False)
+        for i, (text, cmd) in enumerate((("Apply", self.apply), ("Reset default", self.reset),
+                                         ("Reload list", self.refresh))):
+            ThemeButton(btns, self, text, cmd).pack(fill="x", pady=(0 if i == 0 else 5, 0))
+        box = Bevel(self.themes_panel, self)
+        box.pack(fill="both", expand=True)
+        self.listbox = tk.Listbox(box.inner, relief="flat", bd=0, highlightthickness=0,
+                                  activestyle="none", font=self.ui_font, exportselection=False)
         self.listbox.pack(fill="both", expand=True)
         # No polling: every way of changing the selection is bound instead.
         for seq in ("<<ListboxSelect>>", "<ButtonRelease-1>", "<KeyRelease-Up>",
@@ -640,38 +1059,79 @@ class App(tk.Tk):
         self.listbox.bind("<Double-Button-1>", lambda e: self.apply())
 
     def _build_background_panel(self, left):
-        self.background_panel = self._frame(left)
-        panel = self.background_panel
+        panel = self.background_panel = self._frame(left)
+        bottom = self._frame(panel)
+        bottom.pack(side="bottom", fill="x", pady=(14, 0))
+        ThemeButton(bottom, self, "Apply to Theme", self.save_background).pack(fill="x")
+        ThemeButton(bottom, self, "Use JWM Default Background", self.reset_background).pack(
+            fill="x", pady=(5, 0))
+
         self.bg_mode = tk.StringVar(value="solid")
         self.bg_default = tk.BooleanVar(value=False)
         self.bg_color1 = tk.StringVar(value="#2b2b2b")
         self.bg_color2 = tk.StringVar(value="#387cb0")
-        self.bg_radios = []
-        for text, value in (("Solid color", "solid"), ("Gradient", "gradient")):
-            radio = tk.Radiobutton(panel, text=text, variable=self.bg_mode, value=value,
-                                   command=self._background_changed, anchor="w",
-                                   bd=0, highlightthickness=0, padx=2, pady=2)
-            radio.pack(fill="x")
-            self.bg_radios.append(radio)
-        self._label(panel, text="Color 1").pack(fill="x", pady=(8, 2))
-        self.bg_swatch1 = self._button(panel, "#2b2b2b", lambda: self.choose_bg_color(1))
-        self.bg_swatch1.pack(fill="x")
-        self._label(panel, text="Color 2 (gradient)").pack(fill="x", pady=(8, 2))
-        self.bg_swatch2 = self._button(panel, "#387cb0", lambda: self.choose_bg_color(2))
-        self.bg_swatch2.pack(fill="x")
-        self._button(panel, "Apply to Theme", self.save_background).pack(fill="x", pady=(14, 3))
-        self._button(panel, "Use JWM Default Background", self.reset_background).pack(
-            fill="x", pady=3)
+        self.wp_dir = tk.StringVar(value="")
+        radios = self._frame(panel)
+        radios.pack(fill="x", pady=(10, 0))
+        for text, value in (("Solid color", "solid"), ("Gradient", "gradient"),
+                            ("Image", "image")):
+            ThemeRadio(radios, self, text, self.bg_mode, value,
+                       self._background_changed).pack(fill="x")
 
-    # -- status line
+        body = self.bg_body = self._frame(panel)
+        body.pack(fill="both", expand=True, pady=(22, 0))
+
+        # solid color / gradient: one or two color pickers
+        self.colors_frame = self._frame(body)
+        self.picker1 = ColorPicker(self.colors_frame, self, "Color", self.bg_color1,
+                                   self._color_changed)
+        self.picker1.pack(fill="x")
+        self.picker2 = ColorPicker(self.colors_frame, self, "Color 2", self.bg_color2,
+                                   self._color_changed)
+
+        # image: directory, style button and the list of image files
+        img = self.image_frame = self._frame(body)
+        row = self._frame(img)
+        row.pack(fill="x")
+        box = self._frame(row, width=51, height=28)
+        box.pack_propagate(False)
+        box.pack(side="left")
+        path_label = self._label(box, text="Path:", cursor="hand2")
+        path_label.pack(fill="both", expand=True)
+        path_label.bind("<Button-1>", lambda e: self._browse_dir())   # click: choose a folder
+        field = Bevel(row, self, height=28)
+        field.pack_propagate(False)
+        field.pack(side="left", fill="x", expand=True)
+        self.path_entry = tk.Entry(field.inner, textvariable=self.wp_dir, relief="flat", bd=0,
+                                   highlightthickness=0, font=self.ui_font)
+        self.path_entry.pack(fill="both", expand=True, padx=6)
+        self.path_entry.bind("<Return>", lambda e: self._load_wallpaper_dir(self.wp_dir.get()))
+        self._entries.append(self.path_entry)
+        self.wp_mode_btn = ThemeButton(img, self, "Set Tiled", self._cycle_wp_mode)
+        self.wp_mode_btn.pack(fill="x", pady=(14, 0))
+        fbox = Bevel(img, self)
+        fbox.pack(fill="both", expand=True, pady=(14, 0))
+        self.files_list = tk.Listbox(fbox.inner, relief="flat", bd=0, highlightthickness=0,
+                                     activestyle="none", font=self.ui_font, exportselection=False)
+        self.files_list.pack(fill="both", expand=True)
+        self.files_list.bind("<<ListboxSelect>>", lambda e: self._wp_selected())
+        self.files_list.bind("<ButtonRelease-1>", lambda e: self._wp_selected())
+        self._show_bg_mode()
+
+    # -- status line: auto-clears, so the idle window looks like the mockup
     def _on_status_resize(self, event):
         wrap = max(100, event.width - 4)
         if abs(wrap - self._status_wrap) > 2:       # the box has a fixed height: no layout loop
             self._status_wrap = wrap
             self.status.configure(wraplength=wrap)
 
-    def set_status(self, msg):
+    def set_status(self, msg, clear_after=9000):
         self.status.config(text=msg)
+        if self._status_job:
+            self.after_cancel(self._status_job)
+            self._status_job = None
+        if msg and clear_after:
+            self._status_job = self.after(clear_after, lambda: self.status.config(text=""))
 
     # -- logo scan: slow part of the work, kept out of the user interface
     def _start_logo_scan(self):
@@ -699,7 +1159,7 @@ class App(tk.Tk):
     def report_callback_exception(self, exc, val, tb):
         """Show errors in the status bar instead of losing them."""
         traceback.print_exception(exc, val, tb)
-        self.set_status("ERROR: %s: %s" % (exc.__name__, val))
+        self.set_status("ERROR: %s: %s" % (exc.__name__, val), clear_after=0)
 
     def _select_changed(self):
         sel = self.listbox.curselection()
@@ -751,13 +1211,14 @@ class App(tk.Tk):
         return "#ffffff" if self._lum(bg) < 0.5 else "#000000"
 
     def _palette_from(self, theme):
-        """Build the app palette from a parsed theme.
+        """Build the app palette from a parsed theme (the one currently applied).
 
-        - window/list background  <- menu background (MenuStyle)
-        - selected-theme bar      <- selected menu item (MenuStyle/Active)
-        - buttons                 <- panel colors and look (TrayStyle); with
-                                     decorations="motif" they are raised bevels
-        - selected section tab    <- the panel's active window button (TaskListStyle/Active)
+        - window / list background  <- menu background (MenuStyle)
+        - selected-theme bar        <- selected menu item (MenuStyle/Active)
+        - buttons                   <- panel colors and look (TrayStyle): motif themes give
+                                       raised bevels, flat themes flat buttons; pressed buttons
+                                       use the panel's Active colors
+        - selected section tab      <- the panel's active window button (TaskListStyle/Active)
         """
         d = DEFAULT_PALETTE
         colors, motif = {}, False
@@ -785,46 +1246,6 @@ class App(tk.Tk):
                 "act_bg": act_bg, "act_fg": act_fg, "tab_bg": tab_bg, "tab_fg": tab_fg,
                 "motif": motif}
 
-    def _style_button(self, b):
-        p = self.pal
-        if p["motif"]:      # panel buttons are raised bevels in this theme
-            b.configure(relief="raised", bd=2, highlightthickness=0)
-        else:
-            b.configure(relief="flat", bd=0, highlightthickness=1,
-                        highlightbackground=p["edge"], highlightcolor=p["btn_fg"])
-        b.configure(bg=p["btn_bg"], fg=p["btn_fg"],
-                    activebackground=p["act_bg"], activeforeground=p["act_fg"])
-
-    def _style_background_radios(self):
-        """Use JWM's active-menu colors for the selected background option."""
-        p = self.pal
-        selected = self.bg_mode.get()
-        for radio in self.bg_radios:
-            active = radio.cget("value") == selected
-            bg = p["sel_bg"] if active else p["bg"]
-            fg = p["sel_fg"] if active else p["fg"]
-            radio.configure(bg=bg, fg=fg, selectcolor=p["sel_bg"],
-                            activebackground=bg, activeforeground=fg,
-                            disabledforeground=p["muted"], relief="flat", bd=0,
-                            highlightthickness=0)
-
-    def _style_section_buttons(self):
-        """Tabs look like the panel buttons; the selected one is pressed in, like the
-        active window button of the JWM panel."""
-        p = self.pal
-        for section, button in self.section_buttons.items():
-            if section == self.section:
-                button.configure(bg=p["tab_bg"], fg=p["tab_fg"],
-                                 activebackground=p["tab_bg"], activeforeground=p["tab_fg"])
-                if p["motif"]:
-                    button.configure(relief="sunken", bd=2, highlightthickness=0)
-                else:
-                    button.configure(relief="flat", bd=0, highlightthickness=1,
-                                     highlightbackground=p["tab_fg"],
-                                     highlightcolor=p["tab_fg"])
-            else:
-                self._style_button(button)
-
     def restyle(self):
         """Recolor the whole app from the currently applied theme (~/.jwmrc)."""
         theme = parse_theme_cached(TARGET) if os.path.isfile(TARGET) else None
@@ -839,16 +1260,21 @@ class App(tk.Tk):
         for lab in self._labels:
             lab.configure(bg=p["bg"], fg=p["fg"])
         self.status.configure(bg=p["bg"], fg=p["muted"])
-        self.listbox.configure(bg=p["bg"], fg=p["fg"], selectbackground=p["sel_bg"],
-                               selectforeground=p["sel_fg"], highlightbackground=p["edge"],
-                               highlightcolor=p["edge"])
+        for lst in (self.listbox, self.files_list):
+            lst.configure(bg=p["bg"], fg=p["fg"], selectbackground=p["sel_bg"],
+                          selectforeground=p["sel_fg"])
+        for ent in self._entries:
+            ent.configure(bg=p["bg"], fg=p["fg"], insertbackground=p["fg"],
+                          selectbackground=p["sel_bg"], selectforeground=p["sel_fg"])
         self.canvas.configure(bg=p["bg"], highlightbackground=p["edge"],
                               highlightcolor=p["edge"])
-        for b in self._buttons:
-            self._style_button(b)
-        self._style_background_radios()
-        self._style_section_buttons()
-        self._update_bg_swatches()       # the swatches show their own colors
+        for widget in self._custom:      # buttons, radios, bevels, sliders
+            widget.restyle()
+        self._update_tabs()
+
+    def _update_tabs(self):
+        for section, button in self.section_buttons.items():
+            button.set_selected(section == self.section)
 
     # -- actions
     def refresh(self):
@@ -878,14 +1304,7 @@ class App(tk.Tk):
         self.current = name
         self._set_theme(parse_theme_cached(theme_path(name)))
         if self.theme["error"]:
-            msg = "Error in file: " + self.theme["error"]
-        else:
-            msg = "%s  (colors read: %d/%d)" % (name, self.theme["found"], len(COLOR_PATHS))
-            msg += "  - style: %s" % ("motif (raised)" if self.theme["win_deco"] == "motif"
-                                     else "flat")
-            if self.theme["note"]:
-                msg += " - " + self.theme["note"]
-        self.set_status(msg)
+            self.set_status("Error in file: " + self.theme["error"], clear_after=0)
         if self.section == "background":
             self.load_background_controls()
         self.draw()
@@ -903,7 +1322,7 @@ class App(tk.Tk):
             return
         self.restyle()           # the app takes on the colors of the new theme
         self._busy = True
-        self.set_status("Applied %s - restarting JWM ..." % name)
+        self.set_status("Applied %s - restarting JWM ..." % name, clear_after=0)
         result = {}
 
         def work():                       # runs in a thread: the window never freezes
@@ -934,8 +1353,6 @@ class App(tk.Tk):
         if not name:
             self.set_status("Select a theme in the list first")
             return
-        self.set_status("Applying %s ..." % name)
-        self.update_idletasks()
         self.apply_file(name)
 
     def reset(self):
@@ -953,7 +1370,7 @@ class App(tk.Tk):
 
     def show_section(self, section):
         self.section = section
-        self._style_section_buttons()
+        self._update_tabs()
         for panel in (self.themes_panel, self.background_panel, self.menu_panel):
             panel.pack_forget()
         panel = {"themes": self.themes_panel, "background": self.background_panel,
@@ -963,122 +1380,171 @@ class App(tk.Tk):
             self.load_background_controls()
         self.draw()
 
+    # -- Background section ------------------------------------------------------------
+    def _to_hex(self, color, default):
+        rgb = self._rgb(color) if color else None
+        return "#%02x%02x%02x" % rgb if rgb else default
+
     def load_background_controls(self):
-        if not self.theme or self.theme.get("error"):
+        """Fill the Background controls from the selected theme."""
+        t = self.theme
+        if not t or t.get("error"):
             return
-        spec = self.theme.get("colors", {}).get("desktop", "#2b2b2b")
-        colors = split_grad(spec)
-        defined = self.theme.get("desktop_defined", False)
-        c1 = colors[0] if colors and defined else "#000000"
-        c2 = colors[1] if len(colors) > 1 else "#387cb0"
-        self.bg_color1.set(c1)
-        self.bg_color2.set(c2)
-        self.bg_mode.set("gradient" if len(colors) > 1 else "solid")
-        self.bg_default.set(not self.theme.get("desktop_defined", False))
-        self._update_bg_swatches()
+        wp = t.get("wallpaper")
+        colors = split_grad(t["colors"].get("desktop", "#2b2b2b"))
+        defined = t.get("desktop_defined", False)
+        self.picker1.set(self._to_hex(colors[0] if colors and defined else "", "#000000"))
+        self.picker2.set(self._to_hex(colors[1] if len(colors) > 1 else "", "#387cb0"))
+        if wp:
+            self.bg_mode.set("image")
+            self.wp_mode = wp[0] if wp[0] in dict(WALLPAPER_MODES) else "tiled"
+            self.wp_file = wp[1]
+            self._load_wallpaper_dir(os.path.dirname(wp[1]), select=wp[1])
+        else:
+            self.bg_mode.set("gradient" if len(colors) > 1 and defined else "solid")
+        self.bg_default.set(not defined and not wp)
+        self._update_mode_button()
+        self._show_bg_mode()
 
-    def _update_bg_swatches(self):
-        for button, var in ((self.bg_swatch1, self.bg_color1), (self.bg_swatch2, self.bg_color2)):
-            color = var.get()
-            button.config(text=color, bg=color, activebackground=color)
-            rgb = self._rgb(color)
-            fg = "#000000" if rgb and sum(rgb) / 3 > 127 else "#ffffff"
-            button.config(fg=fg, activeforeground=fg)
-
-    def choose_bg_color(self, which):
-        var = self.bg_color1 if which == 1 else self.bg_color2
-        try:
-            initial = var.get() if self._valid(var.get()) else "#2b2b2b"
-            result = colorchooser.askcolor(color=initial, parent=self, title="Choose background color")
-            if result and result[1]:
-                var.set(result[1])
-                self._update_bg_swatches()
-                self._background_changed()
-        except Exception as exc:
-            self.set_status("Color selection error: %s" % exc)
+    def _show_bg_mode(self):
+        mode = self.bg_mode.get()
+        self.colors_frame.pack_forget()
+        self.image_frame.pack_forget()
+        if mode == "image":
+            self.image_frame.pack(fill="both", expand=True)
+            return
+        self.colors_frame.pack(fill="x")
+        self.picker1.set_label("Color" if mode == "solid" else "Color 1")
+        if mode == "gradient":
+            self.picker2.pack(fill="x", pady=(30, 0))     # second color only for gradients
+        else:
+            self.picker2.pack_forget()
 
     def _background_changed(self):
         self.bg_default.set(False)
-        self._style_background_radios()
+        self._show_bg_mode()
         if self.section == "background":
             self.draw()
 
-    def draw_background_preview(self, w, h):
-        c = self.canvas
-        if self.bg_default.get():
-            spec = ("#000000", None)  # JWM's unconfigured desktop background preview
-        elif self.bg_mode.get() == "gradient":
-            spec = (self.bg_color1.get(), self.bg_color2.get())
-        else:
-            spec = (self.bg_color1.get(), None)
-        if not self._valid(spec[0]) or (spec[1] and not self._valid(spec[1])):
-            spec = ("#2b2b2b", None)
-        self._fill(0, 0, w, h, spec, vertical=True)
-        raw = self.theme or {}
-        if not raw or raw.get("error"):
-            return
-        col = raw["colors"]
-        memo = {}
-        def S(key):
-            if key not in memo:
-                memo[key] = self._spec(col, key)
-            return memo[key]
-        C = lambda key: S(key)[0]
-        fam = self._ui_font(raw["font"])
-        F = lambda size=9, bold=False: (fam, size, "bold") if bold else (fam, size)
-        self._draw_tray(w, h, raw, S, C, F, col)
+    def _color_changed(self):
+        self.bg_default.set(False)
+        self.schedule_draw()
 
-    def _write_background(self, mode, c1, c2=None):
-        path = theme_path(self.selected() or self.current or "")
-        if not path or not os.path.isfile(path):
+    def _update_mode_button(self):
+        self.wp_mode_btn.set_text(dict(WALLPAPER_MODES)[self.wp_mode])
+
+    def _cycle_wp_mode(self):
+        keys = [m for m, _ in WALLPAPER_MODES]
+        self.wp_mode = keys[(keys.index(self.wp_mode) + 1) % len(keys)]
+        self._update_mode_button()
+        self.bg_default.set(False)
+        self.draw()
+
+    def _browse_dir(self):
+        start = os.path.expanduser(self.wp_dir.get()) or HOME
+        chosen = filedialog.askdirectory(parent=self, initialdir=start if os.path.isdir(start)
+                                         else HOME, title="Folder with the wallpapers")
+        if chosen:
+            self._load_wallpaper_dir(chosen)
+
+    def _load_wallpaper_dir(self, path, select=None):
+        """List the image files (png, jpg) of a folder."""
+        path = os.path.expanduser((path or "").strip())
+        self.wp_dir.set(path)
+        self.path_entry.xview_moveto(0)
+        self.files_list.delete(0, "end")
+        if not os.path.isdir(path):
+            if path:
+                self.set_status("Folder not found: %s" % path)
+            return
+        try:
+            names = sorted((n for n in os.listdir(path)
+                            if n.lower().endswith(IMAGE_EXT)
+                            and os.path.isfile(os.path.join(path, n))), key=str.lower)
+        except OSError as exc:
+            self.set_status("Cannot read the folder: %s" % exc)
+            return
+        for i, n in enumerate(names):
+            self.files_list.insert("end", n)
+            if select and os.path.join(path, n) == select:
+                self.files_list.selection_set(i)
+                self.files_list.see(i)
+
+    def _wp_selected(self):
+        sel = self.files_list.curselection()
+        if not sel:
+            return
+        file = os.path.join(self.wp_dir.get(), self.files_list.get(sel[0]))
+        if file != self.wp_file:
+            self.wp_file = file
+            self.bg_default.set(False)
+            self.draw()
+
+    def _edit_theme_file(self, transform):
+        """Rewrite the selected theme file with transform(text). True on success."""
+        name = self.selected() or self.current
+        path = theme_path(name or "")
+        if not name or not os.path.isfile(path):
             self.set_status("Select a valid theme first")
             return False
         try:
             with open(path, "r", encoding="utf-8") as f:
                 data = f.read()
-            new = rewrite_background(data, mode, c1, c2)
+            new = transform(data)
             shutil.copy2(path, path + ".bak")
             with open(path, "w", encoding="utf-8") as f:
                 f.write(new)
-            _PARSE_CACHE.pop(path, None)
-            self._set_theme(parse_theme(path))
-            self.load_background_controls()
-            self.draw()
-            return True
         except Exception as exc:
             self.set_status("Background update error: %s" % exc)
             return False
+        _PARSE_CACHE.pop(path, None)
+        self.current = name
+        self._set_theme(parse_theme_cached(path))
+        return True
 
     def save_background(self):
+        """Write the chosen background into the selected theme, apply it, restart JWM."""
+        if self._busy:
+            return
         if not self.current:
             self.set_status("Select a theme first")
             return
-        self.bg_default.set(False)
-        c1, c2 = self.bg_color1.get().strip(), self.bg_color2.get().strip()
-        if not self._valid(c1) or (self.bg_mode.get() == "gradient" and not self._valid(c2)):
-            self.set_status("One of the selected colors is invalid")
-            return
-        if self._write_background(self.bg_mode.get(), c1, c2):
-            # Keep the theme file and the live ~/.jwmrc in sync, then restart JWM.
-            self.set_status("Applying background from theme '%s' ..." % self.current)
+        mode = self.bg_mode.get()
+        if mode == "image":
+            file = self.wp_file
+            if not file or not os.path.isfile(file):
+                self.set_status("Choose an image in the list first")
+                return
+            if not os.path.isfile(WALLPAPER_SCRIPT):
+                self.set_status("Wallpaper script not found: copy jwmanager-wallpaper.sh "
+                                "to %s" % JWM_DIR, clear_after=0)
+                return
+            mode_name = self.wp_mode
+
+            def transform(data):
+                return rewrite_wallpaper(rewrite_background(data, "image"), mode_name, file)
+        else:
+            c1, c2 = self.bg_color1.get(), self.bg_color2.get()
+
+            def transform(data):
+                return rewrite_wallpaper(rewrite_background(data, mode, c1, c2))
+        if self._edit_theme_file(transform):
+            self.load_background_controls()
             self.apply_file(self.current)
-            self.show_section("background")
 
     def reset_background(self):
+        """Back to the background the theme originally had (and no wallpaper script)."""
+        if self._busy:
+            return
         if not self.current:
             self.set_status("Select a theme first")
             return
-        if self._write_background("default", None):
-            self.bg_mode.set("solid")
-            self.bg_default.set(True)
-            self.bg_color1.set("#000000")
-            self.bg_color2.set("#387cb0")
-            self._update_bg_swatches()
-            self.set_status("Applying JWM default background ...")
+        if self._edit_theme_file(
+                lambda data: rewrite_wallpaper(rewrite_background(data, "default"))):
+            self.load_background_controls()
             self.apply_file(self.current)
-            self.draw()
 
-    # -- preview
+    # -- preview ------------------------------------------------------------------------
     def _families(self):
         if self._fam_cache is None:
             try:
@@ -1146,9 +1612,9 @@ class App(tk.Tk):
             self._edge_cache[base] = e
         return e
 
-    def _bevel(self, x1, y1, x2, y2, base, raised=True, width=1):
+    def _bevel(self, x1, y1, x2, y2, base, raised=True, width=1, canvas=None):
         """Raised or sunken bevel, Motif / Windows 98 style."""
-        c = self.canvas
+        c = canvas or self.canvas
         light, dark = self._edges(base)
         tl, br = (light, dark) if raised else (dark, light)
         for i in range(width):
@@ -1220,9 +1686,101 @@ class App(tk.Tk):
             self.theme = theme
             self._theme_rev += 1         # tells draw() that the picture is out of date
 
+    # -- wallpaper preview: the image is prepared in a thread, the window never waits for it
+    def _wallpaper_photo(self, path, mode, w, h):
+        """PhotoImage of the wallpaper as feh would paint it, or None (not ready / no Pillow)."""
+        if not path or not os.path.isfile(path):
+            return None
+        pil = pil_modules()
+        if pil["Image"] is None:
+            if not self.__dict__.get("_pil_note"):
+                self._pil_note = True
+                self.set_status("Install python3-pil to preview wallpapers", clear_after=0)
+            return None
+        key = (path, mode, w, h)
+        photo = self._wp_photos.get(key)
+        if photo is not None:
+            return photo
+        if key in self._wp_images:
+            image = self._wp_images[key]
+            if image is None:
+                return None              # unreadable image
+            photo = self._to_photo(image)
+            self._wp_photos[key] = photo
+            while len(self._wp_photos) > 4:           # keep a few pictures only
+                self._wp_photos.pop(next(iter(self._wp_photos)))
+                self._wp_images.pop(next(iter(self._wp_images)), None)
+            return photo
+        if key not in self._wp_pending:
+            self._wp_pending.add(key)
+            screen = (self.winfo_screenwidth(), self.winfo_screenheight())
+            threading.Thread(target=self._wp_render, args=(key, screen), daemon=True).start()
+            self.after(80, self._wp_check)
+        return None
+
+    def _wp_render(self, key, screen):
+        path, mode, w, h = key
+        try:
+            self._wp_images[key] = render_wallpaper(path, mode, w, h, screen[0], screen[1])
+        except Exception:
+            self._wp_images[key] = None
+        finally:
+            self._wp_pending.discard(key)
+
+    def _wp_check(self):
+        if self._wp_pending:
+            self.after(80, self._wp_check)
+        else:
+            self.draw(force=True)
+
+    def _to_photo(self, image):
+        tk_module = pil_modules()["ImageTk"]
+        if tk_module is not None:
+            try:
+                return tk_module.PhotoImage(image, master=self)
+            except Exception:
+                pass                                  # broken ImageTk: use the PNG route
+        buf = io.BytesIO()                            # no ImageTk: Tk reads PNG data itself
+        image.save(buf, "PNG")
+        return tk.PhotoImage(data=base64.b64encode(buf.getvalue()), master=self)
+
     def _bg_state(self):
-        return (self.bg_default.get(), self.bg_mode.get(),
-                self.bg_color1.get(), self.bg_color2.get())
+        return (self.bg_default.get(), self.bg_mode.get(), self.bg_color1.get(),
+                self.bg_color2.get(), self.wp_file, self.wp_mode)
+
+    def draw_background_preview(self, w, h):
+        c = self.canvas
+        mode = self.bg_mode.get()
+        if mode == "image" and not self.bg_default.get():
+            photo = self._wallpaper_photo(self.wp_file, self.wp_mode, w, h)
+            if photo:
+                c.create_image(0, 0, anchor="nw", image=photo)
+            else:
+                self._fill(0, 0, w, h, ("#1e1e1e", None))
+        else:
+            if self.bg_default.get():
+                spec = ("#000000", None)  # JWM's unconfigured desktop background preview
+            elif mode == "gradient":
+                spec = (self.bg_color1.get(), self.bg_color2.get())
+            else:
+                spec = (self.bg_color1.get(), None)
+            if not self._valid(spec[0]) or (spec[1] and not self._valid(spec[1])):
+                spec = ("#2b2b2b", None)
+            self._fill(0, 0, w, h, spec, vertical=True)
+        raw = self.theme or {}
+        if not raw or raw.get("error"):
+            return
+        col = raw["colors"]
+        memo = {}
+
+        def S(key):
+            if key not in memo:
+                memo[key] = self._spec(col, key)
+            return memo[key]
+        C = lambda key: S(key)[0]
+        fam = self._ui_font(raw["font"])
+        F = lambda size=9, bold=False: (fam, size, "bold") if bold else (fam, size)
+        self._draw_tray(w, h, raw, S, C, F, col)
 
     def draw(self, force=False):
         c = self.canvas
@@ -1260,7 +1818,12 @@ class App(tk.Tk):
         ay2 = h if top_tray else h - tray_h
         H = ay2 - ay1
 
-        self._fill(0, 0, w, h, S("desktop"), vertical=True)     # desktop background
+        wp = raw.get("wallpaper")                               # desktop background
+        photo = self._wallpaper_photo(wp[1], wp[0], w, h) if wp else None
+        if photo:
+            c.create_image(0, 0, anchor="nw", image=photo)
+        else:
+            self._fill(0, 0, w, h, S("desktop"), vertical=True)
 
         bw = raw["border"]
         th = raw["title_h"]
