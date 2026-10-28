@@ -16,12 +16,14 @@ import filecmp
 import glob
 import io
 import json
+import locale
 import os
 import re
 import shlex
 import shutil
 import subprocess
 import threading
+import time
 import traceback
 import tkinter as tk
 import tkinter.font as tkfont
@@ -34,6 +36,9 @@ HOME = os.path.expanduser("~")
 JWM_DIR = os.path.join(HOME, ".jwm")
 THEMES_DIR = os.path.join(JWM_DIR, "themes")
 TARGET = os.path.join(HOME, ".jwmrc")
+ICONS_DIR = os.path.join(JWM_DIR, "icons")           # one folder per icon set
+DEFAULT_ICON_SET = "Default"                         # = the icons the theme file already uses
+DEFAULT_FONT_SPEC = "Sans-12"                        # used when a style has no <Font>
 THEME_FILE = ".jwmrc"
 DEFAULT_NAME = "Default"
 SYSTEM_RC = "/etc/jwm/system.jwmrc"
@@ -69,6 +74,16 @@ _ATTR_GAP = re.compile(r'(=\s*"[^"]*")(?=[A-Za-z_])')
 _TAG = re.compile(r"<[A-Za-z/][^<>]*>")
 
 
+def _prepared_text(path):
+    """File text with the things a strict XML parser rejects fixed (see read_xml)."""
+    with open(path, "rb") as f:
+        text = f.read().decode("utf-8", errors="replace")
+    text = re.sub(r"<!--.*?-->", "", text, flags=re.S)       # comments
+    text = re.sub(r"^\s*<\?xml[^>]*\?>", "", text)           # xml declaration
+    text = _TAG.sub(lambda m: _ATTR_GAP.sub(r"\1 ", m.group(0)), text)
+    return _ENTITY_BAD.sub("&amp;", text)
+
+
 def read_xml(path):
     """Read a .jwmrc tolerantly.
 
@@ -76,13 +91,17 @@ def read_xml(path):
     unescaped '&' in text or attributes without a space (x="0"y="-1").
     We fix those before parsing the file.
     """
-    with open(path, "rb") as f:
-        text = f.read().decode("utf-8", errors="replace")
-    text = re.sub(r"<!--.*?-->", "", text, flags=re.S)       # comments
-    text = re.sub(r"^\s*<\?xml[^>]*\?>", "", text)           # xml declaration
-    text = _TAG.sub(lambda m: _ATTR_GAP.sub(r"\1 ", m.group(0)), text)
-    text = _ENTITY_BAD.sub("&amp;", text)
-    return ET.fromstring(text)
+    return ET.fromstring(_prepared_text(path))
+
+
+def read_xml_fragment(path):
+    """Like read_xml, but also accepts files with several top-level elements
+    (e.g. /etc/jwm/debian-menu): they are wrapped in a <JWM> element."""
+    text = _prepared_text(path)
+    try:
+        return ET.fromstring(text)
+    except ET.ParseError:
+        return ET.fromstring("<JWM>" + text + "</JWM>")
 
 
 def load_roots(path, depth=0, seen=None):
@@ -191,6 +210,8 @@ def parse_theme(path):
     """Extract the main colors and measures from a .jwmrc (JWM 2.3 and 2.4 formats)."""
     t = {"tray_pos": "bottom", "tray_h": 28, "title_h": 22, "border": 1,
          "font": "", "tray_font": "", "icon_paths": [], "note": "",
+         "fonts": {}, "icon_set": DEFAULT_ICON_SET, "icon_default_paths": None,
+         "menu_items": [],
          "win_deco": "flat", "tray_deco": "flat", "menu_deco": "flat", "wallpaper": None,
          "tray_items": TRAY_DEFAULT, "error": None, "found": 0, "colors": {},
          "desktop_defined": False}
@@ -277,6 +298,24 @@ def parse_theme(path):
         if v:
             t["tray_font"] = v
             break
+
+    for key, tag in (("window", "WindowStyle"), ("menu", "MenuStyle"), ("tray", "TrayStyle"),
+                     ("task", "TaskListStyle"), ("pager", "PagerStyle"), ("clock", "ClockStyle")):
+        for root in roots:                       # one font per kind of element
+            v = text_of(root.find(tag + "/Font"))
+            if v:
+                t["fonts"][key] = v
+                break
+
+    t["icon_set"] = icon_set_of(t["icon_paths"])
+    try:                                         # icons the theme had before we changed them
+        with open(path, "r", encoding="utf-8", errors="replace") as f:
+            block = _ICONS_BLOCK_RE.search(f.read())
+        if block:
+            t["icon_default_paths"] = list_icon_paths_in_text(block.group(1))
+    except OSError:
+        pass
+    t["menu_items"] = parse_menu(roots)
 
     for root in roots:
         tray = root.find("Tray")
@@ -637,6 +676,204 @@ def render_wallpaper(path, mode, w, h, screen_w, screen_h):
     return out
 
 
+# ------------------------------------------------------------ fonts, menu and icons (preview data)
+def parse_font(spec):
+    """JWM / fontconfig font name -> (family, pixel size, bold, italic).
+    Understands 'Sans-12', 'Sans-12:bold', 'Sans:size=12:bold', 'Sans:pixelsize=14'.
+    Point sizes are turned into pixels at 96 dpi, like JWM does."""
+    spec = (spec or "").strip() or DEFAULT_FONT_SPEC
+    head, _, opts = spec.partition(":")
+    family, points, pixels = head.strip(), 12.0, None
+    m = re.match(r"^(.*?)-(\d+(?:\.\d+)?)$", head.strip())
+    if m:
+        family, points = m.group(1).strip(), float(m.group(2))
+    bold = italic = False
+    for opt in opts.split(":"):
+        o = opt.strip().lower()
+        try:
+            if o in ("bold", "weight=bold", "weight=200", "weight=demibold"):
+                bold = True
+            elif o in ("italic", "oblique", "slant=italic", "slant=100", "slant=oblique"):
+                italic = True
+            elif o.startswith("size="):
+                points = float(o[5:])
+            elif o.startswith("pixelsize="):
+                pixels = float(o[10:])
+        except ValueError:
+            pass
+    px = pixels if pixels else points * 96.0 / 72.0
+    return family or "Sans", max(7, int(round(px))), bold, italic
+
+
+MENU_LIMIT = 16
+SAMPLE_MENU = (                                   # shown when the theme has no readable menu
+    ("menu", "Graphic", "applications-graphics"), ("menu", "Media", "applications-multimedia"),
+    ("menu", "Office", "applications-office"), ("menu", "Web", "applications-internet"),
+    ("menu", "Tools", "applications-utilities"), ("menu", "System", "applications-system"),
+    ("menu", "Games", "applications-games"), ("separator", "", ""), ("menu", "Exit", ""))
+
+
+def _menu_entries(el, depth=0):
+    """Top-level entries of a menu element, with <Include> files expanded."""
+    entries = []
+    for child in el:
+        tag = child.tag
+        if tag == "Include":
+            target = os.path.expanduser((child.text or "").strip())
+            if not target or target.startswith("exec:") or depth > 2:
+                continue                           # commands are never run for a preview
+            try:
+                inc = read_xml_fragment(target)
+            except Exception:
+                continue
+            holder = ET.Element("holder")
+            holder.extend(list(inc) if inc.tag in ("JWM", "RootMenu") else [inc])
+            entries += _menu_entries(holder, depth + 1)
+        elif tag == "Menu":
+            entries.append({"type": "menu", "label": child.get("label") or "",
+                            "icon": child.get("icon") or ""})
+        elif tag == "Separator":
+            entries.append({"type": "separator", "label": "", "icon": ""})
+        elif tag in ("Program", "Restart", "Exit"):
+            label = child.get("label") or (child.text or "").strip() if tag == "Program" \
+                else (child.get("label") or tag)
+            entries.append({"type": "item", "label": label or tag,
+                            "icon": child.get("icon") or ""})
+        elif tag == "Desktops":
+            entries.append({"type": "menu", "label": child.get("label") or "Desktops",
+                            "icon": child.get("icon") or ""})
+    return entries
+
+
+def parse_menu(roots):
+    """Entries of the theme's <RootMenu>: [{'type','label','icon'}, ...]."""
+    for root in roots:
+        menu = root.find("RootMenu")
+        if menu is not None:
+            return _menu_entries(menu)[:MENU_LIMIT]
+    return []
+
+
+ICON_EXT = ("", ".png", ".xpm", ".jpg", ".jpeg", ".gif", ".bmp")   # svg: neither Pillow nor Tk
+_ICON_MEMO = {}
+
+
+def find_icon(name, paths):
+    """File JWM would use for icon="name": an absolute path, or the name searched in every
+    <IconPath> in order (a missing extension is guessed)."""
+    if not name:
+        return None
+    key = (name, tuple(paths))
+    if key in _ICON_MEMO:
+        return _ICON_MEMO[key]
+    bases = [name] if os.path.isabs(name) else [os.path.join(os.path.expanduser(d), name)
+                                                for d in paths]
+    found = None
+    for base in bases:
+        for ext in ICON_EXT:
+            if os.path.isfile(base + ext):
+                found = base + ext
+                break
+        if found:
+            break
+    _ICON_MEMO[key] = found
+    return found
+
+
+# icon sets: one folder per set inside ~/.jwm/icons; a theme uses one with <IconPath>
+_ICONPATH_RE = re.compile(r"[ \t]*<IconPath>([^<]*)</IconPath>[ \t]*\n?")
+_ICONS_BLOCK_RE = re.compile(
+    r"[ \t]*<!-- JWManager default icons begin\n(.*?)JWManager default icons end -->[ \t]*\n?", re.S)
+_ICONS_OURS_RE = re.compile(r"[ \t]*<IconPath>[^<]*</IconPath><!-- JWManager icons -->[ \t]*\n?")
+
+
+def icon_set_path(name):
+    return os.path.join(ICONS_DIR, name)
+
+
+def list_icon_sets():
+    """['Default', <one entry per folder in ~/.jwm/icons>]. 'Default' always comes first and
+    means: the icons the theme file already uses."""
+    sets = []
+    try:
+        for name in sorted(os.listdir(ICONS_DIR), key=str.lower):
+            if name.lower() != DEFAULT_ICON_SET.lower() and os.path.isdir(icon_set_path(name)):
+                sets.append(name)
+    except OSError:
+        pass
+    return [DEFAULT_ICON_SET] + sets
+
+
+def icon_set_of(paths):
+    """Name of the icon set a list of <IconPath> values points to ('Default' if none)."""
+    icons = os.path.normpath(ICONS_DIR)
+    for p in paths:
+        q = os.path.normpath(os.path.expanduser(p))
+        if os.path.dirname(q) == icons and os.path.basename(q):
+            return os.path.basename(q)
+    return DEFAULT_ICON_SET
+
+
+def list_icon_paths_in_text(text):
+    return [x.strip() for x in re.findall(r"<IconPath>([^<]*)</IconPath>", text)]
+
+
+def _in_comment(data, pos):
+    return data.rfind("<!--", 0, pos) > data.rfind("-->", 0, pos)
+
+
+def rewrite_icons(data, name):
+    """Return the theme text using the icon set `name` (a folder of ~/.jwm/icons).
+
+    The <IconPath> lines the theme had are kept inside a comment (all of them, so there is
+    no conflict between sets) and a single new line points to the chosen set.
+    name None / "Default": remove the new line and bring the original lines back."""
+    block = _ICONS_BLOCK_RE.search(data)
+    stored = block.group(1) if block else None
+    data = _ICONS_OURS_RE.sub("", data)                   # our line is always rebuilt
+    block = _ICONS_BLOCK_RE.search(data)
+    active = [m for m in _ICONPATH_RE.finditer(data) if not _in_comment(data, m.start())]
+
+    if name in (None, "", DEFAULT_ICON_SET):
+        if stored is not None:                            # bring the standard lines back
+            return data[:block.start()] + stored + data[block.end():]
+        sets = [m for m in active
+                if icon_set_of([m.group(1).strip()]) != DEFAULT_ICON_SET]
+        if len({m.group(1).strip() for m in sets}) >= 2:  # several sets in one theme = conflict
+            first = sets[0]
+            keep = ""
+            if os.path.isdir(icon_set_path(DEFAULT_ICON_SET)):
+                keep = "    <IconPath>%s</IconPath>\n" % icon_set_path(DEFAULT_ICON_SET)
+            else:
+                keep = first.group(0)
+            for m in reversed(sets):
+                data = data[:m.start()] + (keep if m is first else "") + data[m.end():]
+        return data
+
+    new_line = "<IconPath>%s</IconPath><!-- JWManager icons -->\n" % icon_set_path(name)
+    if stored is None and len(active) == 1 and \
+            os.path.normpath(os.path.expanduser(active[0].group(1).strip())) == \
+            os.path.normpath(icon_set_path(name)):
+        return data                                       # the theme already uses this set
+    extra = "".join(m.group(0) for m in active)           # lines to move into the comment
+    indent = re.match(r"[ \t]*", active[0].group(0)).group(0) if active else "    "
+    for m in reversed(active):
+        data = data[:m.start()] + data[m.end():]
+    if block is not None:                                 # keep the stored originals
+        block = _ICONS_BLOCK_RE.search(data)
+        text = stored + (extra if extra.endswith("\n") or not extra else extra + "\n")
+        head = data[:block.start()] + indent + "<!-- JWManager default icons begin\n" + text + \
+            "JWManager default icons end -->\n"
+        return head + indent + new_line + data[block.end():]
+    end = data.rfind("</JWM>")
+    pos = active[0].start() if active else (end if end >= 0 else len(data))
+    if extra and not extra.endswith("\n"):
+        extra += "\n"
+    insert = indent + "<!-- JWManager default icons begin\n" + extra + \
+        "JWManager default icons end -->\n" + indent + new_line
+    return data[:pos] + insert + data[pos:]
+
+
 # -------------------------------------------------------------------- custom widgets
 # The app draws its own buttons, radio buttons, fields and sliders so that they look like the
 # JWM panel of the applied theme: only two states (normal and pressed), no hover effect, and the
@@ -955,6 +1192,9 @@ class App(tk.Tk):
         self._frames, self._labels, self._entries, self._custom = [], [], [], []
         self._rgb_cache, self._edge_cache = {}, {}
         self._fam_cache, self._font_memo = None, {}
+        self._font_cache, self._font_objs, self._img_cache = {}, {}, {}
+        self._icon_paths_now = []
+        self.icon_sel = DEFAULT_ICON_SET
         self._draw_job, self._drawn_key, self._status_job = None, None, None
         self._status_wrap = 0
         self._theme_rev = 0
@@ -963,10 +1203,14 @@ class App(tk.Tk):
         self._wp_images, self._wp_photos, self._wp_pending = {}, {}, set()
         self.theme = None
         self.current = None
-        self.section = "themes"
+        self.section = "style"
         self.wp_mode = "tiled"
         self.wp_file = None
 
+        try:
+            locale.setlocale(locale.LC_TIME, "")        # clock format in the user's language
+        except locale.Error:
+            pass
         self._load_window_icon()
         ensure_setup()
         self._build_ui()
@@ -1007,7 +1251,7 @@ class App(tk.Tk):
         nav.grid_propagate(False)
         nav.grid(row=0, column=0, sticky="w", pady=(0, 12))
         self.section_buttons = {}
-        for i, (text, section) in enumerate((("Themes", "themes"), ("Background", "background"),
+        for i, (text, section) in enumerate((("Style", "style"), ("Background", "background"),
                                              ("Menu", "menu"))):
             b = ThemeButton(nav, self, text, lambda value=section: self.show_section(value))
             b.grid(row=0, column=i, sticky="nsew", padx=(0 if i == 0 else 4, 0))
@@ -1026,12 +1270,12 @@ class App(tk.Tk):
         left = self._frame(main, width=self.PANEL_W)
         left.pack_propagate(False)
         left.grid(row=1, column=0, sticky="ns")
-        self._build_themes_panel(left)
+        self._build_style_panel(left)
         self._build_background_panel(left)
         self.menu_panel = self._frame(left)
         self._label(self.menu_panel, text="Menu management is not available yet.").pack(
             fill="x", pady=(10, 0))
-        self.themes_panel.pack(fill="both", expand=True)
+        self.style_panel.pack(fill="both", expand=True)
 
         right = self._frame(main)
         right.grid(row=1, column=1, sticky="nsew", padx=(16, 0))
@@ -1039,14 +1283,29 @@ class App(tk.Tk):
         self.canvas.pack(fill="both", expand=True)
         self.canvas.bind("<Configure>", lambda e: self.schedule_draw())
 
-    def _build_themes_panel(self, left):
-        self.themes_panel = self._frame(left)
-        btns = self._frame(self.themes_panel)
+    def _build_style_panel(self, left):
+        panel = self.style_panel = self._frame(left)
+        btns = self._frame(panel)
         btns.pack(side="bottom", fill="x", pady=(14, 0))
         for i, (text, cmd) in enumerate((("Apply", self.apply), ("Reset default", self.reset),
                                          ("Reload list", self.refresh))):
             ThemeButton(btns, self, text, cmd).pack(fill="x", pady=(0 if i == 0 else 5, 0))
-        box = Bevel(self.themes_panel, self)
+
+        # icon sets: fixed height, right above the buttons
+        ibox = Bevel(panel, self, height=96)
+        ibox.pack(side="bottom", fill="x")
+        self._label(panel, text="Icons").pack(side="bottom", fill="x", pady=(12, 4))
+        self.icons_list = tk.Listbox(ibox.inner, relief="flat", bd=0, highlightthickness=0,
+                                     activestyle="none", font=self.ui_font, exportselection=False)
+        self.icons_list.pack(fill="both", expand=True)
+        for seq in ("<<ListboxSelect>>", "<ButtonRelease-1>", "<KeyRelease-Up>",
+                    "<KeyRelease-Down>", "<KeyRelease-Prior>", "<KeyRelease-Next>",
+                    "<KeyRelease-Home>", "<KeyRelease-End>"):
+            self.icons_list.bind(seq, lambda e: self._icon_selected())
+
+        # themes: take the remaining height
+        self._label(panel, text="Themes").pack(fill="x", pady=(0, 4))
+        box = Bevel(panel, self)
         box.pack(fill="both", expand=True)
         self.listbox = tk.Listbox(box.inner, relief="flat", bd=0, highlightthickness=0,
                                   activestyle="none", font=self.ui_font, exportselection=False)
@@ -1260,7 +1519,7 @@ class App(tk.Tk):
         for lab in self._labels:
             lab.configure(bg=p["bg"], fg=p["fg"])
         self.status.configure(bg=p["bg"], fg=p["muted"])
-        for lst in (self.listbox, self.files_list):
+        for lst in (self.listbox, self.icons_list, self.files_list):
             lst.configure(bg=p["bg"], fg=p["fg"], selectbackground=p["sel_bg"],
                           selectforeground=p["sel_fg"])
         for ent in self._entries:
@@ -1279,10 +1538,14 @@ class App(tk.Tk):
     # -- actions
     def refresh(self):
         _PARSE_CACHE.clear()             # "Reload list" re-reads the theme files
+        _ICON_MEMO.clear()
+        _LOGO_MEMO.clear()
+        self._img_cache.clear()
         self.listbox.delete(0, "end")
         self.current = None
         for n in list_themes():
             self.listbox.insert("end", n)
+        self._fill_icon_list()
         if self.listbox.size():
             self.listbox.selection_set(0)
             self.on_select()
@@ -1290,6 +1553,29 @@ class App(tk.Tk):
             self._set_theme(None)
             self.draw()
             self.set_status("No theme found in %s (needs <theme>/.jwmrc)" % THEMES_DIR)
+
+    # -- icon sets (folders of ~/.jwm/icons)
+    def _fill_icon_list(self):
+        self.icons_list.delete(0, "end")
+        for name in list_icon_sets():
+            self.icons_list.insert("end", name)
+        self._select_icon_set(self.icon_sel)
+
+    def _select_icon_set(self, name):
+        names = list(self.icons_list.get(0, "end"))
+        if name not in names:
+            name = DEFAULT_ICON_SET
+        self.icon_sel = name
+        self.icons_list.selection_clear(0, "end")
+        if name in names:
+            self.icons_list.selection_set(names.index(name))
+            self.icons_list.see(names.index(name))
+
+    def _icon_selected(self):
+        sel = self.icons_list.curselection()
+        if sel and self.icons_list.get(sel[0]) != self.icon_sel:
+            self.icon_sel = self.icons_list.get(sel[0])
+            self.draw()                                         # the preview shows the new icons
 
     def selected(self):
         sel = self.listbox.curselection()
@@ -1303,6 +1589,7 @@ class App(tk.Tk):
             return
         self.current = name
         self._set_theme(parse_theme_cached(theme_path(name)))
+        self._select_icon_set(self.theme["icon_set"])          # the list shows the theme's icons
         if self.theme["error"]:
             self.set_status("Error in file: " + self.theme["error"], clear_after=0)
         if self.section == "background":
@@ -1353,6 +1640,12 @@ class App(tk.Tk):
         if not name:
             self.set_status("Select a theme in the list first")
             return
+        wanted = self.icon_sel
+        if self.theme and not self.theme.get("error") and wanted != self.theme["icon_set"]:
+            # a different icon set than the one in the theme file: write it into the theme
+            if not self._edit_theme_file(lambda data: rewrite_icons(data, wanted)):
+                return
+            self._select_icon_set(wanted)
         self.apply_file(name)
 
     def reset(self):
@@ -1371,9 +1664,9 @@ class App(tk.Tk):
     def show_section(self, section):
         self.section = section
         self._update_tabs()
-        for panel in (self.themes_panel, self.background_panel, self.menu_panel):
+        for panel in (self.style_panel, self.background_panel, self.menu_panel):
             panel.pack_forget()
-        panel = {"themes": self.themes_panel, "background": self.background_panel,
+        panel = {"style": self.style_panel, "background": self.background_panel,
                  "menu": self.menu_panel}[section]
         panel.pack(fill="both", expand=True)
         if section == "background":
@@ -1597,10 +1890,6 @@ class App(tk.Tk):
         if outline:
             c.create_rectangle(x1, y1, x2, y2, fill="", outline=outline)
 
-    @staticmethod
-    def _clock_text(fmt):
-        return "12:34 PM" if "%p" in fmt else "12:34"
-
     def _edges(self, base):
         """(light, dark) bevel edges of a color. Measured on a real JWM motif theme:
         JWM multiplies each channel by about 1.447 (light) and 0.55 (dark)."""
@@ -1628,40 +1917,6 @@ class App(tk.Tk):
         fam = font_family(raw)
         return fam if fam and fam in self._families() else "Sans"
 
-    def _logo_image(self, icon_paths, size):
-        """Resized logo image (None if not found or unreadable)."""
-        cache = self.__dict__.setdefault("_logo_cache", {})
-        path = find_logo(icon_paths)
-        key = (path, size)
-        if key in cache:
-            return cache[key]
-        img = None
-        if path:
-            try:  # with Pillow: all formats, good quality resizing
-                from PIL import Image, ImageTk
-                im = Image.open(path).convert("RGBA")
-                try:
-                    resample = Image.Resampling.BICUBIC
-                except AttributeError:
-                    resample = Image.BICUBIC
-                scale = size / float(max(im.width, im.height))   # JWM also enlarges small icons
-                im = im.resize((max(1, round(im.width * scale)), max(1, round(im.height * scale))),
-                               resample)
-                img = ImageTk.PhotoImage(im, master=self)
-            except Exception:
-                try:  # without Pillow: Tk only reads png/gif/ppm
-                    raw = tk.PhotoImage(file=path, master=self)
-                    big = max(raw.width(), raw.height())
-                    if big >= size:
-                        f = max(1, -(-big // size))
-                        img = raw.subsample(f) if f > 1 else raw
-                    else:
-                        img = raw.zoom(max(1, size // big))
-                except Exception:
-                    img = None
-        cache[key] = img
-        return img
-
     def _icon_font(self, tray_font):
         """Find an installed Nerd Font (preferring the tray one)."""
         if tray_font not in self._font_memo:
@@ -1672,7 +1927,7 @@ class App(tk.Tk):
     def _find_icon_font(fams, tray_font):
         norm = lambda x: re.sub(r"[^a-z0-9]", "", x.lower())
         want = norm(font_family(tray_font))
-        if want:
+        if want and "nerd" in want:                  # the panel font is itself a Nerd Font
             for f in fams:
                 if norm(f) == want:
                     return f
@@ -1778,9 +2033,101 @@ class App(tk.Tk):
                 memo[key] = self._spec(col, key)
             return memo[key]
         C = lambda key: S(key)[0]
-        fam = self._ui_font(raw["font"])
-        F = lambda size=9, bold=False: (fam, size, "bold") if bold else (fam, size)
-        self._draw_tray(w, h, raw, S, C, F, col)
+        self._draw_tray(w, h, raw, S, C, col)
+
+    # -- fonts: every element of the preview uses the font its style has in the theme
+    def _family(self, fam):
+        return fam if fam in ("Sans", "Serif", "Monospace") or fam in self._families() else "Sans"
+
+    def _font_tuple(self, spec):
+        """Tk font (family, -pixels[, style]) for a JWM font name such as 'Sans-12:bold'."""
+        key = spec or ""
+        f = self._font_cache.get(key)
+        if f is None:
+            fam, px, bold, italic = parse_font(spec)
+            style = " ".join(x for x, on in (("bold", bold), ("italic", italic)) if on)
+            f = (self._family(fam), -px, style) if style else (self._family(fam), -px)
+            self._font_cache[key] = f
+        return f
+
+    def _font_obj(self, spec):
+        key = spec or ""
+        f = self._font_objs.get(key)
+        if f is None:
+            fam, px, bold, italic = parse_font(spec)
+            f = tkfont.Font(family=self._family(fam), size=-px,
+                            weight="bold" if bold else "normal",
+                            slant="italic" if italic else "roman")
+            self._font_objs[key] = f
+        return f
+
+    def _fit_text(self, spec, text, max_px):
+        """Text shortened with '...' so that it fits in max_px pixels."""
+        f = self._font_obj(spec)
+        if f.measure(text) <= max_px:
+            return text
+        while text and f.measure(text + "\u2026") > max_px:
+            text = text[:-1]
+        return text + "\u2026" if text else ""
+
+    # -- images: icons, logo, application icon (scaled to a box, small ones are enlarged)
+    def _photo(self, path, max_w, max_h):
+        """PhotoImage of an image file scaled to fit in max_w x max_h, or None if the file
+        cannot be read (svg, or xpm without Pillow)."""
+        if not path:
+            return None
+        key = (path, max_w, max_h)
+        if key in self._img_cache:
+            return self._img_cache[key]
+        img = None
+        Image = pil_modules()["Image"]
+        try:
+            if Image is not None:
+                im = Image.open(path).convert("RGBA")
+                scale = min(max_w / float(im.width), max_h / float(im.height))
+                size = (max(1, round(im.width * scale)), max(1, round(im.height * scale)))
+                try:
+                    resample = Image.Resampling.LANCZOS if scale < 1 else Image.Resampling.BICUBIC
+                except AttributeError:
+                    resample = Image.LANCZOS if scale < 1 else Image.BICUBIC
+                img = self._to_photo(im.resize(size, resample))
+            else:                                            # without Pillow: png / gif only
+                raw = tk.PhotoImage(file=path, master=self)
+                scale = min(max_w / float(raw.width()), max_h / float(raw.height()))
+                if scale >= 1:
+                    img = raw.zoom(max(1, int(scale)))
+                else:
+                    img = raw.subsample(max(1, int(1.0 / scale + 0.999)))
+        except Exception:
+            img = None
+        self._img_cache[key] = img
+        return img
+
+    def _logo_image(self, icon_paths, max_w, max_h):
+        """The JWM logo of the panel menu button (None if not found)."""
+        return self._photo(find_logo(icon_paths), max_w, max_h)
+
+    def _icon_photo(self, name, size):
+        """Image of icon="name" looked up in the icon paths of the previewed set."""
+        return self._photo(find_icon(name, self._icon_paths_now), size, size)
+
+    def _effective_icon_paths(self, raw):
+        """<IconPath> list the preview uses: the theme's own, or the icon set selected in the
+        list (which replaces them, exactly as applying it would)."""
+        chosen, current = self.icon_sel, raw["icon_set"]
+        if chosen and chosen != current:
+            if chosen == DEFAULT_ICON_SET:
+                own = raw["icon_default_paths"]
+                return own if own is not None else raw["icon_paths"]
+            return [icon_set_path(chosen)]
+        return raw["icon_paths"]
+
+    @staticmethod
+    def _clock_text(fmt):
+        try:
+            return time.strftime(fmt or "%H:%M")
+        except ValueError:
+            return "12:34"
 
     def draw(self, force=False):
         c = self.canvas
@@ -1788,7 +2135,7 @@ class App(tk.Tk):
         if w < 300 or h < 200:
             return
         # Nothing to do if what the picture depends on has not changed.
-        key = (self._theme_rev, w, h, self.section,
+        key = (self._theme_rev, w, h, self.section, self.icon_sel,
                self._bg_state() if self.section == "background" else None)
         if key == self._drawn_key and not force:
             return
@@ -1797,6 +2144,7 @@ class App(tk.Tk):
         raw = self.theme
         if not raw:
             return
+        self._icon_paths_now = self._effective_icon_paths(raw)
         if self.section == "background":
             self.draw_background_preview(w, h)
             return
@@ -1810,7 +2158,8 @@ class App(tk.Tk):
 
         C = lambda key: S(key)[0]                   # main color only
         fam = self._ui_font(raw["font"])
-        F = lambda size=9, bold=False: (fam, size, "bold") if bold else (fam, size)
+        F = lambda size=9: (fam, size)              # sample text inside the windows
+        FT = lambda key: self._font_tuple(raw["fonts"].get(key))   # fonts of the theme
 
         tray_h = raw["tray_h"]
         top_tray = raw["tray_pos"] == "top"
@@ -1827,6 +2176,7 @@ class App(tk.Tk):
 
         bw = raw["border"]
         th = raw["title_h"]
+        title_spec = raw["fonts"].get("window")
 
         def glyphs(cx, cy, r, kind, color, thick):
             """Window button symbols: close (X), maximize (square), minimize (dash)."""
@@ -1838,7 +2188,7 @@ class App(tk.Tk):
             else:
                 c.create_line(cx - r, cy + r - 1, cx + r + 1, cy + r - 1, fill=color, width=2)
 
-        def motif_window(x, y, ww, hh, pre, label, bold):
+        def motif_window(x, y, ww, hh, pre, label):
             """Motif frame, reproduced from a real JWM window (pixel measurements):
             ring 0 = raised bevel, ring 1 = dark line, then the title bar made of four
             raised cells (title + three square buttons) above the client area."""
@@ -1852,7 +2202,8 @@ class App(tk.Tk):
             self._fill(tx1, ty1, tx2, ty2, S(pre + "_title"))
             cy = ty1 + th / 2
             self._bevel(tx1, ty1, tx2 - 3 * th, ty2, base, True, 1)       # title cell
-            c.create_text(tx1 + 8, cy, text=label, anchor="w", fill=txt, font=F(9, bold))
+            shown = self._fit_text(title_spec, label, tx2 - 3 * th - tx1 - 14)
+            c.create_text(tx1 + 8, cy, text=shown, anchor="w", fill=txt, font=FT("window"))
             r = max(4, int(th * 0.22))
             for i, kind in enumerate(("close", "max", "min")):           # right to left
                 bx2 = tx2 - i * th
@@ -1862,7 +2213,7 @@ class App(tk.Tk):
             c.create_text(tx1 + 10, ty2 + 18, text="Window content", anchor="w",
                           fill="#9a9a9a", font=F(9))
 
-        def flat_window(x, y, ww, hh, pre, label, bold):
+        def flat_window(x, y, ww, hh, pre, label):
             """Flat frame: Outline color border, symbols without boxes."""
             txt = C(pre + "_text")
             c.create_rectangle(x, y, x + ww, y + hh, fill=C(pre + "_outline"), outline="")
@@ -1870,7 +2221,8 @@ class App(tk.Tk):
             c.create_rectangle(x + bw, y + bw + th, x + ww - bw, y + hh - bw,
                                fill="#1e1e1e", outline="")
             cy = y + bw + th / 2
-            c.create_text(x + bw + 8, cy, text=label, anchor="w", fill=txt, font=F(9, bold))
+            shown = self._fit_text(title_spec, label, ww - 3 * 20 - 2 * bw - 20)
+            c.create_text(x + bw + 8, cy, text=shown, anchor="w", fill=txt, font=FT("window"))
             r = max(4, int(th * 0.22))
             cx = x + ww - bw - 14
             for kind in ("close", "max", "min"):                         # right to left
@@ -1883,37 +2235,75 @@ class App(tk.Tk):
             pre = "act" if active else "inact"
             x, y, ww, hh = int(x), int(y), int(ww), int(hh)
             if raw["win_deco"] == "motif":
-                motif_window(x, y, ww, hh, pre, label, active)
+                motif_window(x, y, ww, hh, pre, label)
             else:
-                flat_window(x, y, ww, hh, pre, label, active)
+                flat_window(x, y, ww, hh, pre, label)
 
         window(w * 0.05, ay1 + H * 0.10, w * 0.46, H * 0.40, False, "Inactive window")
         window(w * 0.20, ay1 + H * 0.34, w * 0.50, H * 0.46, True, "Active window")
 
-        # menu
-        mx, my, mw = w * 0.72, ay1 + H * 0.08, min(w * 0.25, 170)
-        items = ("Terminal", "Browser", "Exit")
-        ih = 24
-        mh = ih * len(items) + 4
-        if raw["menu_deco"] == "motif":
+        self._draw_menu(raw, S, C, w, ay1, H)
+        self._draw_tray(w, h, raw, S, C, col)
+
+    def _draw_menu(self, raw, S, C, w, ay1, H):
+        """The root menu of the theme, as JWM draws it: icons (looked up in the icon paths of
+        the previewed set), labels in the menu font, an arrow on submenus, separators."""
+        c = self.canvas
+        spec = raw["fonts"].get("menu")
+        font, fobj = self._font_tuple(spec), self._font_obj(spec)
+        entries = raw["menu_items"] or [{"type": t, "label": l, "icon": i}
+                                        for t, l, i in SAMPLE_MENU]
+        has_icons = any(e["icon"] for e in entries)
+        icon = 22 if has_icons else 0
+        item_h = max(fobj.metrics("linespace") + 9, icon + 6 if has_icons else 0)
+        sep_h = 6
+        height = lambda es: 2 + sum(sep_h if e["type"] == "separator" else item_h for e in es)
+        while len(entries) > 1 and height(entries) > H - 24:     # too many entries: cut the tail
+            entries = entries[:-1]
+        text_x = 1 + 3 + (icon + 3 if has_icons else 3)
+        longest = max([fobj.measure(e["label"]) for e in entries if e["label"]] or [40])
+        arrows = any(e["type"] == "menu" for e in entries)
+        mw = text_x + longest + (14 + 5 + 3 if arrows else 8) + 1
+        mh = height(entries)
+        mx, my = int(w - mw - 12), int(ay1 + 12)
+        motif = raw["menu_deco"] == "motif"
+        if motif:
             self._fill(mx, my, mx + mw, my + mh, S("menu_bg"))
             self._bevel(mx, my, mx + mw, my + mh, C("menu_bg"), True, 1)
         else:
             c.create_rectangle(mx, my, mx + mw, my + mh, fill=C("menu_outline"), outline="")
             self._fill(mx + 1, my + 1, mx + mw - 1, my + mh - 1, S("menu_bg"))
-        for i, label in enumerate(items):
-            iy = my + 2 + i * ih
-            if i == 1:
-                self._fill(mx + 2, iy, mx + mw - 2, iy + ih, S("menu_sel_bg"))
+        y = my + 1
+        marked = next((i for i, e in enumerate(entries) if e["type"] != "separator"
+                       and i >= 1), 0)                          # one entry shows the "selected" look
+        for i, e in enumerate(entries):
+            if e["type"] == "separator":
+                if motif:
+                    light, dark = self._edges(C("menu_bg"))
+                    c.create_line(mx + 3, y + 2, mx + mw - 4, y + 2, fill=dark)
+                    c.create_line(mx + 3, y + 3, mx + mw - 4, y + 3, fill=light)
+                else:
+                    c.create_line(mx + 3, y + 3, mx + mw - 4, y + 3, fill=C("menu_outline"))
+                y += sep_h
+                continue
+            if i == marked:
+                self._fill(mx + 1, y, mx + mw - 1, y + item_h, S("menu_sel_bg"))
                 fg = C("menu_sel_fg")
             else:
                 fg = C("menu_fg")
-            c.create_text(mx + 10, iy + ih / 2, text=label, anchor="w", fill=fg, font=F(9))
+            cy = y + item_h / 2
+            if e["icon"]:
+                photo = self._icon_photo(e["icon"], icon)
+                if photo:
+                    c.create_image(mx + 4, y + (item_h - icon) // 2, anchor="nw", image=photo)
+            c.create_text(mx + text_x, cy, text=e["label"], anchor="w", fill=fg, font=font)
+            if e["type"] == "menu":
+                ax = mx + mw - 3 - 5 - 1
+                c.create_polygon(ax, cy - 4, ax, cy + 5, ax + 5, cy, fill=fg, outline="")
+            y += item_h
 
-        self._draw_tray(w, h, raw, S, C, F, col)
-
-    def _draw_tray(self, w, h, raw, S, C, F, col):
-        # Shared tray renderer used by both the Themes and the Background previews.
+    def _draw_tray(self, w, h, raw, S, C, col):
+        # Shared tray renderer used by both the Style and the Background previews.
         # Elements are drawn in the order of the theme's <Tray> section.
         c = self.canvas
         tray_h = raw["tray_h"]
@@ -1928,6 +2318,7 @@ class App(tk.Tk):
                           ty + (tray_h - 1 if top_tray else 0), fill=C("tray_outline"))
         mid = ty + tray_h / 2
         y1, y2 = ty + 1, ty + tray_h - 1
+        fonts = raw["fonts"]
 
         def tbtn(x1, y1_, x2, y2_, spec, pressed=False):
             """Tray element: flat, or raised/sunken when the tray is motif."""
@@ -1935,7 +2326,6 @@ class App(tk.Tk):
             if tmotif:
                 self._bevel(x1, y1_, x2, y2_, spec[0], not pressed, 1)
 
-        logo = self._logo_image(raw["icon_paths"], tray_h - 3)
         icon_fam = self._icon_font(raw["tray_font"])
         is_pua = lambda ch: 0xE000 <= ord(ch) <= 0xF8FF or ord(ch) >= 0xF0000
 
@@ -1945,7 +2335,9 @@ class App(tk.Tk):
                 return "\u2022"                  # Nerd Font symbol not available
             return lab
 
+        tray_font = self._font_tuple(fonts.get("tray"))
         ndesk, cell = 3, int(tray_h * 1.64)
+        clock_spec = fonts.get("clock")
 
         def width_of(it):
             kind = it["type"]
@@ -1958,7 +2350,7 @@ class App(tk.Tk):
             if kind == "dock":
                 return max(24, min(it.get("w", 64), tray_h * 3))
             if kind == "clock":
-                return 14 + 7 * len(self._clock_text(it["format"]))
+                return 14 + self._font_obj(clock_spec).measure(self._clock_text(it["format"]))
             if kind == "button":
                 if it["action"].startswith("root:"):
                     return int(tray_h * 1.64)
@@ -1967,7 +2359,7 @@ class App(tk.Tk):
                     return tray_h
                 if any(is_pua(ch) for ch in it["label"]):
                     return max(tray_h, 12 + 7 * len(lab))     # symbol buttons
-                return 6 + 7 * len(lab)                       # plain text, e.g. "_" is 13 px
+                return 5 + self._font_obj(fonts.get("tray")).measure(lab)   # plain text
             return 0                              # tasklist: takes the remaining space
 
         items = raw["tray_items"]
@@ -1979,6 +2371,7 @@ class App(tk.Tk):
             if kind == "button":
                 tbtn(x, y1, x + wd, y2, S("tray_bg"))
                 if it["action"].startswith("root:"):
+                    logo = self._logo_image(self._icon_paths_now, wd - 8, tray_h - 8)
                     if logo:
                         c.create_image(x + wd / 2, mid, image=logo)
                     elif icon_fam:
@@ -1986,17 +2379,21 @@ class App(tk.Tk):
                                       font=(icon_fam, 14))
                     else:
                         c.create_text(x + wd / 2, mid, text="JWM", fill=C("tray_fg"),
-                                      font=F(9, True))
+                                      font=tray_font)
                 else:
                     lab = label_of(it["label"])
-                    if lab:
+                    photo = self._icon_photo(it["icon"], tray_h - 8) if it["icon"] else None
+                    if photo:
+                        c.create_image(x + wd / 2, mid, image=photo)
+                    elif lab:
                         pua = any(is_pua(ch) for ch in it["label"])
                         c.create_text(x + wd / 2, mid, text=lab, fill=C("tray_fg"),
-                                      font=(icon_fam, 12) if (pua and icon_fam) else F(9))
-                    else:  # button with an icon: placeholder
+                                      font=(icon_fam, 12) if (pua and icon_fam) else tray_font)
+                    else:  # button with an icon that cannot be drawn: placeholder
                         c.create_rectangle(x + wd / 2 - 6, mid - 6, x + wd / 2 + 6, mid + 6,
                                            outline=C("tray_fg"))
             elif kind == "pager":
+                pager_font = self._font_tuple(fonts.get("pager"))
                 for i in range(ndesk):
                     x0, act = x + i * cell, i == 1       # like the real tray: 2nd desktop active
                     left = x0 + 1 if (tmotif and i) else x0
@@ -2006,25 +2403,31 @@ class App(tk.Tk):
                                            fill=C("pager_act_fg"), outline=C("pager_outline"))
                     elif it.get("labeled"):
                         c.create_text(x0 + cell / 2, mid, text=str(i + 1),
-                                      fill=C("pager_text"), font=F(8))
+                                      fill=C("pager_text"), font=pager_font)
                     if tmotif:   # thin line between desktops, in the pager outline color
                         if i:
                             c.create_line(x0, y1, x0, y2, fill=C("pager_outline"))
                     else:
                         c.create_rectangle(x0, y1, x0 + cell, y2, outline=C("pager_outline"))
             elif kind == "tasklist":
+                task_spec = fonts.get("task")
+                task_font = self._font_tuple(task_spec)
                 kinds = (("Active window", "task_act_", True), ("Window", "task_", False),
                          ("Minimized", "task_min_", True))
-                n = max(1, min(len(kinds), int(wd // 90)))
+                n = max(1, min(len(kinds), int(wd // 110)))
                 iw = max(50, min(it["maxwidth"], int(wd // n)))
+                app_icon = self._photo(ICON_FILE, tray_h - 8, tray_h - 8) \
+                    if os.path.isfile(ICON_FILE) else None
                 for j, (label, pre, pressed) in enumerate(kinds[:n]):
                     ix = x + j * iw                  # items are side by side, no gap
                     tbtn(ix, y1, ix + iw, y2, S(pre + "bg"), pressed=pressed)
-                    c.create_rectangle(ix + 5, mid - 5, ix + 15, mid + 5, outline=C(pre + "fg"))
-                    room = max(1, (iw - 26) // 6)           # keep the text inside its item
-                    shown = label if len(label) <= room else label[:max(1, room - 1)] + "\u2026"
-                    c.create_text(ix + 21, mid, text=shown, anchor="w", fill=C(pre + "fg"),
-                                  font=F(8))
+                    if app_icon:
+                        c.create_image(ix + 4, mid, anchor="w", image=app_icon)
+                    else:
+                        c.create_rectangle(ix + 5, mid - 5, ix + 15, mid + 5, outline=C(pre + "fg"))
+                    shown = self._fit_text(task_spec, label, iw - 30)
+                    c.create_text(ix + 25, mid, text=shown, anchor="w", fill=C(pre + "fg"),
+                                  font=task_font)
             elif kind == "swallow":
                 sz = min(it["w"], 40, tray_h - 2)
                 sx = x + 1
@@ -2039,7 +2442,7 @@ class App(tk.Tk):
                 if "clock_bg" in col:
                     self._fill(x, y1, x + wd, y2, S("clock_bg"))
                 c.create_text(x + wd / 2, mid, text=self._clock_text(it["format"]),
-                              fill=C("clock_fg"), font=F(9))
+                              fill=C("clock_fg"), font=self._font_tuple(clock_spec))
             x += wd
 
 

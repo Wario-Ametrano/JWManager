@@ -2,13 +2,17 @@
 <JWM>
     <!-- PINGUINO - JWM THEME -->
 
-<!-- WALLPAPER -->
-    <Desktops> <Background type="gradient">#727272:#929292</Background><!-- JWManager custom background: <Background type="gradient">#39c3a9:#2166be</Background> --> </Desktops>
-    
-<!-- STARTUP APPS -->
+    <!-- STARTUP APPS -->
     <StartupCommand>xset s off -dpms s noblank</StartupCommand>
     <StartupCommand>numlockx on</StartupCommand>
     <StartupCommand>lxqt-policykit-agent &amp;</StartupCommand>
+
+    <StartupCommand>xset s off</StartupCommand>
+    <StartupCommand>xset -dpms</StartupCommand>
+    <StartupCommand>xset s noblank</StartupCommand>
+
+<!-- WALLPAPER -->
+    <Desktops> <Background type="gradient">#727272:#929292</Background><!-- JWManager custom background: <Background type="gradient">#39c3a9:#2166be</Background> --> </Desktops>
     
 <!-- RESIZE,MOVE & FOCUS MODE -->
     <MoveMode>outline</MoveMode>
@@ -17,6 +21,8 @@
   	<FocusModel>click</FocusModel>
   	<DoubleClickSpeed>400</DoubleClickSpeed>
   	<DoubleClickDelta>2</DoubleClickDelta>
+
+    <FocusModel>click</FocusModel>
 
 <!-- MENU -->
     <RootMenu onroot="12" height="22">
@@ -125,7 +131,6 @@
     <Key mask="A" key="x">exec:xfe</Key>
 
 <!-- ICONS -->
-    <FocusModel>click</FocusModel>
-    <IconPath>/home/wario/.jwm/icons</IconPath>
+    <IconPath>.jwm/icons</IconPath>
 
 </JWM>

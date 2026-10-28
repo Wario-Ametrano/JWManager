@@ -1,0 +1,56 @@
+<JWM>
+<!-- Automatically generated and updated. Do not touch -->
+
+     	<Menu icon="graphic" label="Graphic">
+          	<Program icon="xfimage" label="Xfimage">xfimage</Program>
+          	<Program icon="grabc" label="Grabc (color picker)">bash -c "grabc | xclip -selection clipboard"</Program>
+			<Program icon="scrot" label="Scrot (screenshot)">scrot -s</Program>
+    	</Menu>
+
+	<Menu icon="media" label="Media">
+ 	  		<Program icon="alsamixer" label="Alsamixer">xterm -e alsamixer</Program>
+	</Menu>
+	
+ 	<Menu icon="office" label="Office">
+          	<Program icon="xfwrite" label="Xfwrite">xfwrite</Program>
+          	<Program icon="xpdf" label="Xpdf">xpdf</Program>
+	</Menu>
+
+        <Menu icon="web" label="Web">
+        	<Program icon="min" label="Min Browser">min</Program>
+            <Program icon="falkon" label="Falkon">falkon</Program>
+        </Menu>
+
+        <Menu icon="tools" label="Tools">
+      		 	<Menu icon="dev" label="Dev">
+
+       			 </Menu>
+ 				<Menu icon="other" label="Other">
+ 		 		</Menu>
+				<Program icon="folder" label="Xfe">xfe</Program>
+            	<Program icon="folder-root" label="Xfe (Root)">pkexec env DISPLAY=$DISPLAY XAUTHORITY=$XAUTHORITY xfe</Program>
+				<Program icon="terminal" label="XTerm">xterm</Program>
+        </Menu>
+
+  	<Menu icon="system" label="System">
+  		<Menu icon="preferences" label="Preferences">
+  		 	<Program icon="jwmanager" label="WManager">python3 .jwm/jwmanager.py</Program>
+   			<Program icon="terminal" label="Xterm Config">xterm -e micro .Xresources</Program>
+ 	</Menu>
+      
+      <Menu icon="games" label="Games">
+       			<Program icon="knight-chess" label="Knights Chess">knights -qwindowtitle %c</Program>
+
+        </Menu>
+
+      </Menu>
+      <Separator/>  
+        <Menu icon="exit" label="Exit">       
+			<Restart icon="refresh" label="Refresh"/> 
+			<Program icon="poweroff" label="PowerOff">/usr/libexec/jwm/jwm-poweroff.sh</Program>
+			<Program icon="reboot" label="Reboot">/usr/libexec/jwm/jwm-reboot.sh</Program>
+			<Program icon="lock-screen" label="Lock Screen">xscreensaver -no-splash & xscreensaver-command -lock</Program>
+			<Program icon="log-out" label="Log Out">exit</Program>
+        </Menu>
+
+</JWM>
