@@ -5,26 +5,24 @@
     <!-- WALLPAPER -->
      <Desktops> <Background type="solid">#005a70</Background></Desktops>
 
-    <!-- STARTUP E MODALITÀ SAGOMA -->
-    <StartupCommand>nm-applet</StartupCommand>
+       <!-- ========================= -->
+    <!--            StartupCommand           -->
+    <!-- ========================= -->
     <StartupCommand>xset s off -dpms s noblank</StartupCommand>
     <StartupCommand>numlockx on</StartupCommand>
     <StartupCommand>lxqt-policykit-agent &amp;</StartupCommand>
+
+    <StartupCommand>xset s off</StartupCommand>
+    <StartupCommand>xset -dpms</StartupCommand>
+    <StartupCommand>xset s noblank</StartupCommand>
 
     <MoveMode>outline</MoveMode>
     <ResizeMode>outline</ResizeMode>
 
     <!-- MENU  -->
     <RootMenu onroot="12">
-        <Include>.jwm/jwm-menu</Include>
-        <Separator/>
-        <Program label="Xkill" icon="vcs-conflicting"  confirm="true">xkill</Program>
-        <Restart label="JWM Restart" icon="vcs-update-required"/>
-        <Menu label="Exit" icon="sportstracker">
-            <Program label="PowerOff" icon="boot" confirm="true">/usr/libexec/jwm/jwm-poweroff.sh</Program>
-            <Program label="Reboot" icon="xfsm-reboot"  confirm="true">/usr/libexec/jwm/jwm-reboot.sh</Program>
-            <Exit label="Log Out" icon="computer-log-out"  confirm="true" />
-        </Menu>
+        <Include>.jwm/jwm_menu</Include>
+     </Menu>
 
     </RootMenu>
     <!-- STILE DEL MENU  -->

@@ -26,7 +26,7 @@
 
 <!-- MENU -->
     <RootMenu onroot="12" height="22">
-        <Include>.jwm/jwm-menu</Include>
+        <Include>.jwm/jwm_menu</Include>
     </RootMenu>
     
 <!-- MENU STYLE -->
@@ -131,6 +131,9 @@
     <Key mask="A" key="x">exec:xfe</Key>
 
 <!-- ICONS -->
-    <IconPath>.jwm/icons</IconPath>
+    <!-- JWManager default icons begin
+    <IconPath>.jwm/icons/Pinguino</IconPath>
+JWManager default icons end -->
+    <IconPath>.jwm/icons/Pinguino</IconPath><!-- JWManager icons -->
 
 </JWM>

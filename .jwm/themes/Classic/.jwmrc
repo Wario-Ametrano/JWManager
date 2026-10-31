@@ -23,16 +23,7 @@
     </MenuStyle>
 
     <RootMenu onroot="12">
-        <Include>.jwm/jwm-menu</Include>
-        <Separator/>
-        <Program icon="utilities-terminal" label="Terminal">x-terminal-emulator</Program>
-        <Separator/>
-        <Restart label="Restart" icon="reload"/>
-        <Menu label="Exit" icon="org.gnome.OfficeRunner">
-            <Program label="Power Off" confirm="true">/usr/libexec/jwm/jwm-poweroff.sh</Program>
-            <Program label="Reboot" confirm="true">reboot</Program>
-            <Exit label="Log Out" confirm="true" />
-        </Menu>
+        <Include>.jwm/jwm_menu</Include>
     </RootMenu>
 
     <!-- ========================= -->
@@ -134,7 +125,6 @@
     <!-- ========================= -->
     <!--         DESKTOPS          -->
     <!-- ========================= -->
-
     <Desktops width="3" height="1"><!-- JWManager custom background: <Background type="solid">#000000</Background> -->
         <Desktop name="1"/>
         <Desktop name="2"/>
@@ -145,7 +135,6 @@
     <!-- ========================= -->
     <!--         KEY BINDINGS      -->
     <!-- ========================= -->
-
     <Key key="Super_L">root:1</Key>
     <Key key="Super_R">root:1</Key>
 
@@ -154,8 +143,6 @@
     <!-- ========================= -->
     <!--         ICON PATHS        -->
     <!-- ========================= -->
-
-    <IconPath>/usr/share/icons</IconPath>
-    <IconPath>/usr/share/pixmaps</IconPath>
+    <IconPath>.jwm/icons/Classic</IconPath>
 
 </JWM>

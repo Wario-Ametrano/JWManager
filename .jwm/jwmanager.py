@@ -137,10 +137,14 @@ def split_grad(spec):
 
 # key -> possible XML paths (the first one found wins)
 COLOR_PATHS = {
-    "desktop": [".//Desktops/Background"],
+    "desktop": [".//Desktops/Background", ".//Desktops/Desktop/Background"],
     "tray_bg": ["TrayStyle/Background"],
     "tray_fg": ["TrayStyle/Foreground", "TrayStyle/Text"],
     "tray_outline": ["TrayStyle/Outline"],
+    "tbtn_bg": ["TrayButtonStyle/Background"],
+    "tbtn_fg": ["TrayButtonStyle/Foreground", "TrayButtonStyle/Text"],
+    "tbtn_act_bg": ["TrayButtonStyle/Active/Background"],
+    "tbtn_act_fg": ["TrayButtonStyle/Active/Foreground", "TrayButtonStyle/Active/Text"],
     "tray_act_bg": ["TrayStyle/Active/Background"],
     "tray_act_fg": ["TrayStyle/Active/Foreground", "TrayStyle/Active/Text"],
     "act_title": ["WindowStyle/Active/Title", "WindowStyle/Active/Background"],
@@ -182,6 +186,8 @@ DEFAULT_COLORS = {
 # missing color -> inherit from another color of the theme
 FALLBACK = {
     "tray_outline": "tray_bg", "tray_act_bg": "tray_fg", "tray_act_fg": "tray_bg",
+    "tbtn_bg": "tray_bg", "tbtn_fg": "tray_fg", "tbtn_act_bg": "tray_act_bg",
+    "tbtn_act_fg": "tray_act_fg",
     "act_outline": "act_title", "inact_outline": "inact_title",
     "menu_outline": "menu_bg", "menu_sel_bg": "menu_fg", "menu_sel_fg": "menu_bg",
     "task_bg": "tray_bg", "task_fg": "tray_fg",
@@ -211,7 +217,7 @@ def parse_theme(path):
     t = {"tray_pos": "bottom", "tray_h": 28, "title_h": 22, "border": 1,
          "font": "", "tray_font": "", "icon_paths": [], "note": "",
          "fonts": {}, "icon_set": DEFAULT_ICON_SET, "icon_default_paths": None,
-         "menu_items": [],
+         "menu_items": [], "menu_includes": [],
          "win_deco": "flat", "tray_deco": "flat", "menu_deco": "flat", "wallpaper": None,
          "tray_items": TRAY_DEFAULT, "error": None, "found": 0, "colors": {},
          "desktop_defined": False}
@@ -316,6 +322,13 @@ def parse_theme(path):
     except OSError:
         pass
     t["menu_items"] = parse_menu(roots)
+    for root in roots:                           # files the RootMenu includes
+        menu = root.find("RootMenu")
+        if menu is not None:
+            for inc in menu.iter("Include"):
+                target = os.path.expanduser((inc.text or "").strip())
+                if target and not target.startswith("exec:"):
+                    t["menu_includes"].append(target)
 
     for root in roots:
         tray = root.find("Tray")
@@ -706,13 +719,11 @@ def parse_font(spec):
 
 
 MENU_LIMIT = 16
-SAMPLE_MENU = (                                   # shown when the theme has no readable menu
-    ("menu", "Graphic", "applications-graphics"), ("menu", "Media", "applications-multimedia"),
-    ("menu", "Office", "applications-office"), ("menu", "Web", "applications-internet"),
-    ("menu", "Tools", "applications-utilities"), ("menu", "System", "applications-system"),
-    ("menu", "Games", "applications-games"), ("separator", "", ""), ("menu", "Exit", ""))
-
-
+# The preview menu is read from this file, whatever the theme is (JWM themes <Include> it).
+MENU_FILES = (os.path.join(JWM_DIR, "jwm_menu"), os.path.join(HOME, ".jwm_menu"),
+              os.path.join(JWM_DIR, "menu"), os.path.join(HOME, ".debian-menu"))
+# Fixed size of the preview menu: it never changes with the theme (a scaled-down JWM menu).
+PV_MENU_ITEM_H, PV_MENU_ICON, PV_MENU_FONT_PX, PV_MENU_SEP_H = 21, 17, 12, 6
 def _menu_entries(el, depth=0):
     """Top-level entries of a menu element, with <Include> files expanded."""
     entries = []
@@ -754,7 +765,86 @@ def parse_menu(roots):
     return []
 
 
-ICON_EXT = ("", ".png", ".xpm", ".jpg", ".jpeg", ".gif", ".bmp")   # svg: neither Pillow nor Tk
+_SVG_TOOLS = []
+SVG_NOTE = {"black": False}      # set when the only renderer available draws black silhouettes
+
+
+def svg_tools():
+    """svg renderers installed, best first. ImageMagick is last: without the rsvg delegate it
+    draws gradients and many icons as black silhouettes."""
+    if not _SVG_TOOLS:
+        try:
+            import cairosvg  # noqa: F401
+            _SVG_TOOLS.append("cairosvg")
+        except Exception:
+            pass
+        for exe in ("rsvg-convert", "resvg"):
+            if shutil.which(exe):
+                _SVG_TOOLS.append(exe)
+        for exe in ("magick", "convert"):
+            if shutil.which(exe):
+                _SVG_TOOLS.append(exe)
+                break
+        if not _SVG_TOOLS:
+            _SVG_TOOLS.append("")                         # remember that there is none
+    return [t for t in _SVG_TOOLS if t]
+
+
+def _render_svg(tool, path, size):
+    try:
+        if tool == "cairosvg":
+            import cairosvg
+            return cairosvg.svg2png(url=path, output_width=size, output_height=size)
+        if tool == "rsvg-convert":
+            cmd = ["rsvg-convert", "-w", str(size), "-h", str(size), "--keep-aspect-ratio", path]
+        elif tool == "resvg":
+            cmd = ["resvg", "-w", str(size), "-h", str(size), path, "-c"]
+        else:                                             # magick / convert
+            cmd = [tool, "-background", "none", "-density", "384", "-resize",
+                   "%dx%d" % (size, size), "svg:" + path, "png:-"]
+        out = subprocess.run(cmd, capture_output=True, timeout=8)
+        if out.returncode == 0 and out.stdout[:4] == b"\x89PNG":
+            return out.stdout
+    except Exception:
+        pass
+    return None
+
+
+def opaque_brightness(im):
+    """Mean brightness (0-255) of the visible pixels of an image, or None if there are none."""
+    small = im.convert("RGBA").resize((24, 24))
+    total = count = 0
+    for r, g, b, a in small.getdata():
+        if a > 128:
+            total += (r + g + b) / 3.0
+            count += 1
+    return total / count if count >= 8 else None
+
+
+def svg_to_png(path, size):
+    """PNG bytes of an svg icon. Renderers are tried in turn and a result that is an all-black
+    silhouette is rejected in favour of the next one (only the last resort may stay black)."""
+    Image = pil_modules()["Image"]
+    last = None
+    for tool in svg_tools():
+        data = _render_svg(tool, path, size)
+        if not data:
+            continue
+        last = data
+        if Image is None:
+            return data
+        try:
+            brightness = opaque_brightness(Image.open(io.BytesIO(data)))
+        except Exception:
+            return data
+        if brightness is None or brightness > 14:
+            SVG_NOTE["black"] = False
+            return data
+        SVG_NOTE["black"] = True                          # looks black: try the next tool
+    return last
+
+
+ICON_EXT = ("", ".png", ".xpm", ".jpg", ".jpeg", ".gif", ".bmp", ".svg")   # svg comes last
 _ICON_MEMO = {}
 
 
@@ -1189,11 +1279,16 @@ class App(tk.Tk):
         self.minsize(720, 487)
         self.pal = dict(DEFAULT_PALETTE)
         self.ui_font = tkfont.Font(family="Sans", size=10)
+        self._ref_font = tkfont.Font(family="Sans", size=-PV_MENU_FONT_PX)   # sizes the preview menu
         self._frames, self._labels, self._entries, self._custom = [], [], [], []
         self._rgb_cache, self._edge_cache = {}, {}
         self._fam_cache, self._font_memo = None, {}
         self._font_cache, self._font_objs, self._img_cache = {}, {}, {}
         self._icon_paths_now = []
+        self._menu_sig, self._menu_cache, self._icon_note = None, [], None
+        self._icons_sig = ()
+        self._hint_sig = "none"
+        self._menu_override = _load_cache().get("menu_file")
         self.icon_sel = DEFAULT_ICON_SET
         self._draw_job, self._drawn_key, self._status_job = None, None, None
         self._status_wrap = 0
@@ -1215,6 +1310,7 @@ class App(tk.Tk):
         ensure_setup()
         self._build_ui()
         self.restyle()           # colors of the app follow the applied theme
+        self.bind("<FocusIn>", self._on_focus_in)
         self.refresh()
         self.listbox.focus_set()
         self._start_logo_scan()
@@ -1272,9 +1368,7 @@ class App(tk.Tk):
         left.grid(row=1, column=0, sticky="ns")
         self._build_style_panel(left)
         self._build_background_panel(left)
-        self.menu_panel = self._frame(left)
-        self._label(self.menu_panel, text="Menu management is not available yet.").pack(
-            fill="x", pady=(10, 0))
+        self._build_menu_panel(left)
         self.style_panel.pack(fill="both", expand=True)
 
         right = self._frame(main)
@@ -1316,6 +1410,67 @@ class App(tk.Tk):
                     "<KeyRelease-Home>", "<KeyRelease-End>"):
             self.listbox.bind(seq, lambda e: self._select_changed())
         self.listbox.bind("<Double-Button-1>", lambda e: self.apply())
+
+    def _build_menu_panel(self, left):
+        panel = self.menu_panel = self._frame(left)
+        self.menu_path = tk.StringVar(value="")
+        row = self._frame(panel)
+        row.pack(fill="x")
+        title = self._label(row, text="Menu file:", cursor="hand2")
+        title.pack(side="left")
+        title.bind("<Button-1>", lambda e: self._browse_menu_file())      # click: browse
+        field = Bevel(panel, self, height=28)
+        field.pack(fill="x", pady=(6, 0))
+        self.menu_entry = tk.Entry(field.inner, textvariable=self.menu_path, relief="flat", bd=0,
+                                   highlightthickness=0, font=self.ui_font)
+        self.menu_entry.pack(fill="both", expand=True, padx=6)
+        self.menu_entry.bind("<Return>", lambda e: self._set_menu_file(self.menu_path.get()))
+        self._entries.append(self.menu_entry)
+        self.menu_info = self._label(panel, text="", justify="left", wraplength=self.PANEL_W)
+        self.menu_info.pack(fill="x", pady=(12, 0))
+
+    def _refresh_menu_panel(self):
+        path = self._menu_file()
+        entries = self._menu_entries_now()
+        self.menu_path.set(path or "")
+        self.menu_entry.xview_moveto(0)
+        tools = svg_tools()
+        svg = ("svg icons are drawn with: %s" % tools[0]) if tools else \
+            "svg icons: no renderer installed (sudo apt install librsvg2-bin)"
+        if path:
+            self.menu_info.configure(text="%d entries in the preview menu.\n\nEdit the file and come "
+                                          "back here: the preview follows.\n\n%s" % (len(entries), svg))
+        else:
+            self.menu_info.configure(text="Not found.\n\nType the path of your menu file and press "
+                                          "Enter, or click \"Menu file:\" to browse. It is searched "
+                                          "in ~/.jwm/jwm_menu, ~/.jwm_menu and in the files your "
+                                          "~/.jwmrc includes.")
+
+    def _browse_menu_file(self):
+        start = os.path.dirname(self._menu_file() or "") or (JWM_DIR if os.path.isdir(JWM_DIR)
+                                                              else HOME)
+        chosen = filedialog.askopenfilename(parent=self, initialdir=start, title="Menu file")
+        if chosen:
+            self._set_menu_file(chosen)
+
+    def _set_menu_file(self, path):
+        """Choose the file the preview menu is read from (empty = find it automatically)."""
+        path = os.path.expanduser((path or "").strip())
+        if path and not os.path.isfile(path):
+            self.set_status("File not found: %s" % path)
+            self._refresh_menu_panel()
+            return
+        self._menu_override = path or None
+        cache = _load_cache()
+        if path:
+            cache["menu_file"] = path
+        else:
+            cache.pop("menu_file", None)
+        _save_cache(cache)
+        self._menu_sig = None
+        self._hint_sig = "none"
+        self._refresh_menu_panel()
+        self.draw(force=True)
 
     def _build_background_panel(self, left):
         panel = self.background_panel = self._frame(left)
@@ -1671,6 +1826,8 @@ class App(tk.Tk):
         panel.pack(fill="both", expand=True)
         if section == "background":
             self.load_background_controls()
+        elif section == "menu":
+            self._refresh_menu_panel()
         self.draw()
 
     # -- Background section ------------------------------------------------------------
@@ -2072,36 +2229,86 @@ class App(tk.Tk):
 
     # -- images: icons, logo, application icon (scaled to a box, small ones are enlarged)
     def _photo(self, path, max_w, max_h):
-        """PhotoImage of an image file scaled to fit in max_w x max_h, or None if the file
-        cannot be read (svg, or xpm without Pillow)."""
+        """PhotoImage of an image file scaled to fit in max_w x max_h (small images are enlarged,
+        like JWM does), or None if it cannot be read. The picture is always built from the
+        original file: nothing is redrawn."""
         if not path:
             return None
-        key = (path, max_w, max_h)
+        try:
+            stamp = os.stat(path).st_mtime_ns          # a replaced icon file is picked up
+        except OSError:
+            return None
+        key = (path, stamp, max_w, max_h)
         if key in self._img_cache:
             return self._img_cache[key]
         img = None
-        Image = pil_modules()["Image"]
         try:
-            if Image is not None:
-                im = Image.open(path).convert("RGBA")
-                scale = min(max_w / float(im.width), max_h / float(im.height))
-                size = (max(1, round(im.width * scale)), max(1, round(im.height * scale)))
-                try:
-                    resample = Image.Resampling.LANCZOS if scale < 1 else Image.Resampling.BICUBIC
-                except AttributeError:
-                    resample = Image.LANCZOS if scale < 1 else Image.BICUBIC
-                img = self._to_photo(im.resize(size, resample))
-            else:                                            # without Pillow: png / gif only
-                raw = tk.PhotoImage(file=path, master=self)
-                scale = min(max_w / float(raw.width()), max_h / float(raw.height()))
-                if scale >= 1:
-                    img = raw.zoom(max(1, int(scale)))
-                else:
-                    img = raw.subsample(max(1, int(1.0 / scale + 0.999)))
+            img = self._photo_pillow(path, max_w, max_h)
         except Exception:
             img = None
+        if img is None and not path.lower().endswith(".svg"):
+            img = self._photo_tk(path, max_w, max_h)   # Tk loads the original file itself
         self._img_cache[key] = img
         return img
+
+    def _photo_pillow(self, path, max_w, max_h):
+        Image = pil_modules()["Image"]
+        if path.lower().endswith(".svg"):                  # rasterized by an external tool
+            data = svg_to_png(path, 2 * max(max_w, max_h))
+            if data is None:
+                return None
+            if Image is None:
+                return tk.PhotoImage(data=base64.b64encode(data), master=self)
+            source = io.BytesIO(data)
+        else:
+            if Image is None:
+                return None
+            source = path
+        src = Image.open(source).convert("RGBA")
+        scale = min(max_w / float(src.width), max_h / float(src.height))
+        size = (max(1, round(src.width * scale)), max(1, round(src.height * scale)))
+        try:
+            resample = Image.Resampling.LANCZOS if scale < 1 else Image.Resampling.BICUBIC
+        except AttributeError:
+            resample = Image.LANCZOS if scale < 1 else Image.BICUBIC
+        out = src.resize(size, resample)
+        before, after = opaque_brightness(src), opaque_brightness(out)
+        if before and before > 40 and (after is None or after < 0.35 * before):
+            raise ValueError("scaling darkened the icon")  # never show a corrupted copy
+        if not path.lower().endswith(".svg"):
+            native = self._tk_brightness(path)             # what Tk itself reads from the file
+            if native and native > 40 and (after is None or after < 0.35 * native):
+                raise ValueError("Pillow reads this file darker than Tk does")
+        return self._to_photo(out)
+
+    def _tk_brightness(self, path):
+        """Mean brightness of the visible pixels of a file as Tk reads it (None if Tk cannot)."""
+        try:
+            raw = tk.PhotoImage(file=path, master=self)
+            w, h = raw.width(), raw.height()
+            total = count = 0
+            for iy in range(12):
+                for ix in range(12):
+                    x, y = min(w - 1, ix * w // 12), min(h - 1, iy * h // 12)
+                    if raw.transparency_get(x, y):
+                        continue
+                    r, g, b = raw.get(x, y)[:3]
+                    total += (int(r) + int(g) + int(b)) / 3.0
+                    count += 1
+            return total / count if count >= 6 else None
+        except Exception:
+            return None
+
+    def _photo_tk(self, path, max_w, max_h):
+        """The original file loaded by Tk (png / gif / ppm), scaled by whole factors only."""
+        try:
+            raw = tk.PhotoImage(file=path, master=self)
+            scale = min(max_w / float(raw.width()), max_h / float(raw.height()))
+            if scale >= 1:
+                return raw.zoom(max(1, int(scale)))
+            return raw.subsample(max(1, int(round(1.0 / scale))))
+        except Exception:
+            return None
 
     def _logo_image(self, icon_paths, max_w, max_h):
         """The JWM logo of the panel menu button (None if not found)."""
@@ -2135,16 +2342,22 @@ class App(tk.Tk):
         if w < 300 or h < 200:
             return
         # Nothing to do if what the picture depends on has not changed.
-        key = (self._theme_rev, w, h, self.section, self.icon_sel,
+        raw = self.theme
+        paths = self._effective_icon_paths(raw) if raw else []
+        isig = self._icons_signature(paths)
+        key = (self._theme_rev, w, h, self.section, self.icon_sel, self._menu_signature(), isig,
                self._bg_state() if self.section == "background" else None)
         if key == self._drawn_key and not force:
             return
         self._drawn_key = key
+        if isig != self._icons_sig:                 # icons were added / removed: look again
+            self._icons_sig = isig
+            _ICON_MEMO.clear()
+            self._img_cache.clear()
         c.delete("all")
-        raw = self.theme
         if not raw:
             return
-        self._icon_paths_now = self._effective_icon_paths(raw)
+        self._icon_paths_now = paths
         if self.section == "background":
             self.draw_background_preview(w, h)
             return
@@ -2215,11 +2428,15 @@ class App(tk.Tk):
 
         def flat_window(x, y, ww, hh, pre, label):
             """Flat frame: Outline color border, symbols without boxes."""
-            txt = C(pre + "_text")
-            c.create_rectangle(x, y, x + ww, y + hh, fill=C(pre + "_outline"), outline="")
+            txt, outline = C(pre + "_text"), C(pre + "_outline")
+            c.create_rectangle(x, y, x + ww, y + hh, fill=C(pre + "_title"), outline="")  # frame
             self._fill(x + bw, y + bw, x + ww - bw, y + bw + th, S(pre + "_title"))
             c.create_rectangle(x + bw, y + bw + th, x + ww - bw, y + hh - bw,
                                fill="#1e1e1e", outline="")
+            if bw > 1:                       # thick frame: a thin line also runs round the client
+                c.create_rectangle(x + bw - 1, y + bw + th - 1, x + ww - bw, y + hh - bw,
+                                   outline=outline)
+            c.create_rectangle(x, y, x + ww - 1, y + hh - 1, outline=outline)             # outline
             cy = y + bw + th / 2
             shown = self._fit_text(title_spec, label, ww - 3 * 20 - 2 * bw - 20)
             c.create_text(x + bw + 8, cy, text=shown, anchor="w", fill=txt, font=FT("window"))
@@ -2245,25 +2462,85 @@ class App(tk.Tk):
         self._draw_menu(raw, S, C, w, ay1, H)
         self._draw_tray(w, h, raw, S, C, col)
 
+    # -- the preview menu: always the entries of the jwm_menu file, whatever the theme is
+    def _menu_file(self):
+        """Menu file of the preview: the one chosen in the Menu tab, else a well-known place,
+        else a file the applied ~/.jwmrc includes in its RootMenu."""
+        if self._menu_override and os.path.isfile(self._menu_override):
+            return self._menu_override
+        for path in MENU_FILES:
+            if os.path.isfile(path):
+                return path
+        applied = parse_theme_cached(TARGET) if os.path.isfile(TARGET) else None
+        for path in (applied or {}).get("menu_includes", []):
+            if os.path.isfile(path):
+                return path
+        return None
+
+    def _menu_signature(self):
+        """(path, modification time, size) of the menu file: changes when the file changes."""
+        path = self._menu_file()
+        try:
+            st = os.stat(path)
+            return (path, st.st_mtime_ns, st.st_size)
+        except (OSError, TypeError):
+            return (None, 0, 0)
+
+    def _menu_entries_now(self):
+        """Top-level entries of ~/.jwm/jwm_menu (read again only when the file changes)."""
+        sig = self._menu_signature()
+        if sig != self._menu_sig:
+            self._menu_sig = sig
+            entries = []
+            if sig[0]:
+                try:
+                    root = read_xml_fragment(sig[0])
+                    if root.tag not in ("JWM", "RootMenu"):
+                        holder = ET.Element("holder")
+                        holder.append(root)
+                        root = holder
+                    entries = _menu_entries(root)
+                except Exception:
+                    entries = []
+            self._menu_cache = entries[:MENU_LIMIT]
+        return self._menu_cache
+
+    def _icons_signature(self, paths):
+        """Modification times of the icon folders: changes when icons are added or removed."""
+        sig = []
+        for d in paths:
+            try:
+                sig.append(os.stat(os.path.expanduser(d)).st_mtime_ns)
+            except OSError:
+                sig.append(0)
+        return tuple(sig)
+
+    def _on_focus_in(self, event):
+        """Back from the editor or the file manager: if the menu file or the icons changed,
+        the preview follows."""
+        icons = self._icons_signature(self._effective_icon_paths(self.theme)) if self.theme else ()
+        if self._menu_signature() != self._menu_sig or icons != self._icons_sig:
+            self.schedule_draw()
+
     def _draw_menu(self, raw, S, C, w, ay1, H):
-        """The root menu of the theme, as JWM draws it: icons (looked up in the icon paths of
-        the previewed set), labels in the menu font, an arrow on submenus, separators."""
+        """The menu of the jwm_menu file in the colors of the theme. Its size is fixed (a
+        scaled-down JWM menu): only its colors and the icon set change from theme to theme."""
         c = self.canvas
-        spec = raw["fonts"].get("menu")
-        font, fobj = self._font_tuple(spec), self._font_obj(spec)
-        entries = raw["menu_items"] or [{"type": t, "label": l, "icon": i}
-                                        for t, l, i in SAMPLE_MENU]
+        entries = self._menu_entries_now()
+        if not entries:
+            self._menu_hint()
+            return
+        family = self._family(parse_font(raw["fonts"].get("menu"))[0])
+        font = (family, -PV_MENU_FONT_PX)
         has_icons = any(e["icon"] for e in entries)
-        icon = 22 if has_icons else 0
-        item_h = max(fobj.metrics("linespace") + 9, icon + 6 if has_icons else 0)
-        sep_h = 6
+        icon, item_h, sep_h = PV_MENU_ICON, PV_MENU_ITEM_H, PV_MENU_SEP_H
         height = lambda es: 2 + sum(sep_h if e["type"] == "separator" else item_h for e in es)
         while len(entries) > 1 and height(entries) > H - 24:     # too many entries: cut the tail
             entries = entries[:-1]
         text_x = 1 + 3 + (icon + 3 if has_icons else 3)
-        longest = max([fobj.measure(e["label"]) for e in entries if e["label"]] or [40])
+        longest = max([self._ref_font.measure(e["label"]) for e in entries if e["label"]] or [40])
         arrows = any(e["type"] == "menu" for e in entries)
-        mw = text_x + longest + (14 + 5 + 3 if arrows else 8) + 1
+        mw = text_x + longest + (12 + 4 + 3 if arrows else 8) + 1
         mh = height(entries)
         mx, my = int(w - mw - 12), int(ay1 + 12)
         motif = raw["menu_deco"] == "motif"
@@ -2276,6 +2553,7 @@ class App(tk.Tk):
         y = my + 1
         marked = next((i for i, e in enumerate(entries) if e["type"] != "separator"
                        and i >= 1), 0)                          # one entry shows the "selected" look
+        declared, drawn = [], 0
         for i, e in enumerate(entries):
             if e["type"] == "separator":
                 if motif:
@@ -2293,14 +2571,63 @@ class App(tk.Tk):
                 fg = C("menu_fg")
             cy = y + item_h / 2
             if e["icon"]:
+                declared.append(e["icon"])
                 photo = self._icon_photo(e["icon"], icon)
                 if photo:
+                    drawn += 1
                     c.create_image(mx + 4, y + (item_h - icon) // 2, anchor="nw", image=photo)
             c.create_text(mx + text_x, cy, text=e["label"], anchor="w", fill=fg, font=font)
             if e["type"] == "menu":
-                ax = mx + mw - 3 - 5 - 1
-                c.create_polygon(ax, cy - 4, ax, cy + 5, ax + 5, cy, fill=fg, outline="")
+                ax = mx + mw - 3 - 4 - 1
+                c.create_polygon(ax, cy - 3, ax, cy + 4, ax + 4, cy, fill=fg, outline="")
             y += item_h
+        self._icon_report(declared, drawn)
+
+    def _menu_hint(self):
+        """The preview has no menu: say why (once per file state)."""
+        if self._menu_sig == self._hint_sig:
+            return
+        self._hint_sig = self._menu_sig
+        if self._menu_sig and self._menu_sig[0]:
+            self.set_status("The menu file has no readable entries: %s" % self._menu_sig[0],
+                            clear_after=12000)
+        else:
+            self.set_status("Menu file not found: choose it in the Menu tab", clear_after=12000)
+
+    def _icon_report(self, declared, drawn):
+        """Tell why the menu has no icons (once per icon set / menu file), instead of failing
+        silently."""
+        key = (tuple(self._icon_paths_now), self._menu_sig)
+        if drawn and SVG_NOTE["black"] and key != self._icon_note:
+            self._icon_note = key                 # drawn, but the only svg renderer paints black
+            self.set_status("svg icons look black: ImageMagick cannot draw them well. Install "
+                            "rsvg-convert (sudo apt install librsvg2-bin)", clear_after=15000)
+            return
+        if not declared or drawn:
+            if not SVG_NOTE["black"]:
+                self._icon_note = None
+            return
+        if key == self._icon_note:
+            return
+        self._icon_note = key
+        located = [find_icon(n, self._icon_paths_now) for n in declared]
+        located = [x for x in located if x]
+        if not located:
+            where = self._icon_paths_now[0] if self._icon_paths_now else ""
+            hint = ""
+            if where and os.path.isdir(where):
+                inner = glob.glob(os.path.join(where, "*", declared[0] + ".*"))
+                if inner:
+                    hint = " (it is in the subfolder '%s': JWM needs the icons directly in the " \
+                           "set folder)" % os.path.basename(os.path.dirname(inner[0]))
+            self.set_status("Menu icons not found: looked for '%s' in %s%s"
+                            % (declared[0], where or "(no <IconPath>)", hint), clear_after=12000)
+        elif all(x.lower().endswith(".svg") for x in located):
+            self.set_status("Menu icons are svg files: install rsvg-convert to draw them "
+                            "(sudo apt install librsvg2-bin)", clear_after=12000)
+        else:
+            self.set_status("Menu icons found but they cannot be read (xpm needs python3-pil)",
+                            clear_after=12000)
 
     def _draw_tray(self, w, h, raw, S, C, col):
         # Shared tray renderer used by both the Style and the Background previews.
@@ -2369,16 +2696,16 @@ class App(tk.Tk):
             kind = it["type"]
             wd = flex if kind == "tasklist" else width_of(it)
             if kind == "button":
-                tbtn(x, y1, x + wd, y2, S("tray_bg"))
+                tbtn(x, y1, x + wd, y2, S("tbtn_bg"))
                 if it["action"].startswith("root:"):
                     logo = self._logo_image(self._icon_paths_now, wd - 8, tray_h - 8)
                     if logo:
                         c.create_image(x + wd / 2, mid, image=logo)
                     elif icon_fam:
-                        c.create_text(x + wd / 2, mid, text=MENU_ICON, fill=C("tray_fg"),
+                        c.create_text(x + wd / 2, mid, text=MENU_ICON, fill=C("tbtn_fg"),
                                       font=(icon_fam, 14))
                     else:
-                        c.create_text(x + wd / 2, mid, text="JWM", fill=C("tray_fg"),
+                        c.create_text(x + wd / 2, mid, text="JWM", fill=C("tbtn_fg"),
                                       font=tray_font)
                 else:
                     lab = label_of(it["label"])
@@ -2387,11 +2714,11 @@ class App(tk.Tk):
                         c.create_image(x + wd / 2, mid, image=photo)
                     elif lab:
                         pua = any(is_pua(ch) for ch in it["label"])
-                        c.create_text(x + wd / 2, mid, text=lab, fill=C("tray_fg"),
+                        c.create_text(x + wd / 2, mid, text=lab, fill=C("tbtn_fg"),
                                       font=(icon_fam, 12) if (pua and icon_fam) else tray_font)
                     else:  # button with an icon that cannot be drawn: placeholder
                         c.create_rectangle(x + wd / 2 - 6, mid - 6, x + wd / 2 + 6, mid + 6,
-                                           outline=C("tray_fg"))
+                                           outline=C("tbtn_fg"))
             elif kind == "pager":
                 pager_font = self._font_tuple(fonts.get("pager"))
                 for i in range(ndesk):

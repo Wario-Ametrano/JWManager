@@ -3,46 +3,84 @@
 
      	<Menu icon="graphic" label="Graphic">
           	<Program icon="xfimage" label="Xfimage">xfimage</Program>
-          	<Program icon="grabc" label="Grabc (color picker)">bash -c "grabc | xclip -selection clipboard"</Program>
+          	<Program label="  Gimp">gimp</Program>
+			<Program icon="libresprite" label="LibreSprite">/home/wario/Immagini/LibreSprite-x86_64.AppImage</Program>
+          	<Program label="  Grabc (color picker)">bash -c "grabc | xclip -selection clipboard"</Program>
 			<Program icon="scrot" label="Scrot (screenshot)">scrot -s</Program>
     	</Menu>
 
 	<Menu icon="media" label="Media">
+        	<Program label="󰕼  Vlc">vlc</Program>
+ 	  		<Program label="  Audacity">audacity</Program>
  	  		<Program icon="alsamixer" label="Alsamixer">xterm -e alsamixer</Program>
+ 	      	<Program icon="pulseaudio" label="Pulse Audio">pavucontrol-qt</Program>
 	</Menu>
 	
  	<Menu icon="office" label="Office">
+ 	        <Program label="󰡠  Atril">atril</Program>
           	<Program icon="xfwrite" label="Xfwrite">xfwrite</Program>
-          	<Program icon="xpdf" label="Xpdf">xpdf</Program>
+          	<Program label="  Xpdf">xpdf</Program>
+	   		<Program label="󱔗  Onlyoffice">/snap/bin/oo-de-test %U</Program>
 	</Menu>
 
         <Menu icon="web" label="Web">
-        	<Program icon="min" label="Min Browser">min</Program>
-            <Program icon="falkon" label="Falkon">falkon</Program>
+        	<Program icon="web-browser" label="Min Browser">min</Program>
+            <Program label="󰬔  Midori">midori</Program>
+            <Program label="  Falkon">falkon</Program>
+            <Program label="  Telegram">telegram-desktop</Program>
+	    	<Program label="  Whatsdesk">whatsdesk</Program>
         </Menu>
+
+
 
         <Menu icon="tools" label="Tools">
       		 	<Menu icon="dev" label="Dev">
-
+            		<Program label=" Kate">kate</Program>
+            		<Program label="󰰶  Zed">zed</Program>
+            		<Program label=" Sublime Text">subl</Program>
+	    			<Program label="  VS Codium">codium</Program>
        			 </Menu>
  				<Menu icon="other" label="Other">
+   					<Program icon="mintstick" label="Mintstick Format USB">mintstick -m format</Program>
+              		<Program icon="pcmanfm" label="PcmanFM">pcmanfm</Program>
+					<Program icon="spacefmfind" label="SpaceFM Find">spacefm --find-files</Program>      
  		 		</Menu>
 				<Program icon="folder" label="Xfe">xfe</Program>
-            	<Program icon="folder-root" label="Xfe (Root)">pkexec env DISPLAY=$DISPLAY XAUTHORITY=$XAUTHORITY xfe</Program>
+            	<Program icon="root-folder" label="Xfe (Root)">pkexec env DISPLAY=$DISPLAY XAUTHORITY=$XAUTHORITY xfe</Program>
+				<Program label="󰇥  Yazi">lxterminal -e /home/wario/.local/bin/yazi-term</Program>
 				<Program icon="terminal" label="XTerm">xterm</Program>
+				<Program icon="lxterminal" label="LXTerminal">lxterminal</Program>
+				<Program label="  Alacritty">alacritty</Program>
+				<Program label="󰄛  Kitty">kitty</Program>
         </Menu>
 
   	<Menu icon="system" label="System">
   		<Menu icon="preferences" label="Preferences">
-  		 	<Program icon="jwmanager" label="WManager">python3 .jwm/jwmanager.py</Program>
-   			<Program icon="terminal" label="Xterm Config">xterm -e micro .Xresources</Program>
+  		 	<Program label="  JWManager">python3 .jwm/jwmanager.py</Program>
+ 			<Program icon="lxappearance" label="LxAppearance">lxappearance</Program>
+   			<Program label="  Kvantum">kvantummanager</Program>
+   			<Program label="  Qt6ct Settings">qt6ct</Program>
+   			<Program label="  Xterm Config">xterm -e micro .Xresources</Program>
+   			<Program label="󰄛  Kitty Themes">kitty -e kitten themes</Program>
+   			<Program label="󰇥  Yazi Setting">lxterminal -e micro .config/yazi/yazi.toml</Program>
+		</Menu>	
+   		 <Program icon="updates" label="Updates">lubuntu-update</Program>
+   		 <Program icon="htop" label="Htop">xterm htop</Program>
+   	     <Program icon="discover" label="Discover">plasma-discover</Program>
+         <Program icon="qps" label="Qps">qps</Program>
  	</Menu>
       
       <Menu icon="games" label="Games">
-       			<Program icon="knight-chess" label="Knights Chess">knights -qwindowtitle %c</Program>
-
-        </Menu>
-
+       		<Menu label="󰜃  FPS">
+       			<Program label="󰿗  EDuke32">/usr/bin/flatpak run --branch=stable --arch=x86_64 --command=eduke32 com.eduke32.EDuke32</Program>
+  				<Program label="󰱯  LZDoom">lzdoom</Program>
+        		<Program label="󰰜  QuakeSpasm">quakespasm</Program>
+       		</Menu>
+       		<Menu label="  Strategy">
+       			<Program label=" Knights Chess">knights -qwindowtitle %c</Program>
+  				<Program label="  Ricochlime">/usr/bin/flatpak run --branch=stable --arch=x86_64 --command=ricochlime com.adilhanney.ricochlime</Program>
+       		</Menu>
+      		<Program label=" ScummVM">scummvm</Program>   
       </Menu>
       <Separator/>  
         <Menu icon="exit" label="Exit">       
